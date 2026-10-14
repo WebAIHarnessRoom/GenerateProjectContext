@@ -1,0 +1,4 @@
+inherit_defaults = true
+
+[filter]
+ignore_dirs = ["local_venv"]

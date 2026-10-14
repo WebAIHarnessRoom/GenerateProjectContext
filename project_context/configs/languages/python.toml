@@ -1,0 +1,33 @@
+schema_version = 1
+name = "python"
+inherit_defaults = true
+active = true
+
+[detect]
+suffixes    = [".py", ".pyi"]
+file_globs  = []
+dir_markers = ["pyproject.toml", "setup.py", "setup.cfg", "Pipfile"]
+
+[filter]
+ignore_dirs = [
+  ".venv", "venv", "env", ".env", "virtualenv",
+  ".tox", ".nox", ".eggs", ".hypothesis", ".pytype", ".pyre",
+  ".mypy_cache", ".pytest_cache", ".ruff_cache",
+  "site-packages",
+]
+ignore_dir_globs = ["*.egg-info", "*.dist-info"]
+ignore_suffixes   = [".pyc", ".pyo", ".pyd", ".pyc.orig"]
+ignore_file_globs = ["*.pyc"]
+
+[code_langs]
+".py"  = "python"
+".pyi" = "python"
+".pyx" = "cython"
+".pxd" = "cython"
+
+[code_lang_names]
+"requirements.txt" = "text"
+"Pipfile"          = "toml"
+
+[ast]
+parser = "python"

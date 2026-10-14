@@ -1,0 +1,20 @@
+schema_version = 1
+name = "dotnet"
+inherit_defaults = true
+active = true
+
+[detect]
+suffixes   = [".cs", ".fs", ".vb"]
+file_globs = ["*.csproj", "*.sln", "*.fsproj"]
+
+[filter]
+ignore_dirs = ["bin", "obj", ".vs", "packages"]
+ignore_suffixes = [".pdb", ".nupkg"]
+
+[code_langs]
+".cs" = "csharp"
+".fs" = "fsharp"
+".vb" = "vbnet"
+
+[ast]
+parser = "none"

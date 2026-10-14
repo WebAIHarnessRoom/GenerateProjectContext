@@ -1,0 +1,17 @@
+schema_version = 1
+name = "php"
+inherit_defaults = true
+active = true
+
+[detect]
+suffixes   = [".php"]
+file_globs = ["composer.json"]
+
+[filter]
+ignore_dirs = ["vendor"]
+
+[code_langs]
+".php" = "php"
+
+[ast]
+parser = "none"

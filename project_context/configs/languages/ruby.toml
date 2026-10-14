@@ -1,0 +1,19 @@
+schema_version = 1
+name = "ruby"
+inherit_defaults = true
+active = true
+
+[detect]
+suffixes    = [".rb", ".rake"]
+file_globs  = ["Gemfile"]
+dir_markers = ["Gemfile"]
+
+[filter]
+ignore_dirs = [".bundle", "vendor/bundle", "tmp"]
+
+[code_langs]
+".rb"   = "ruby"
+".rake" = "ruby"
+
+[ast]
+parser = "none"

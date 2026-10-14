@@ -1,0 +1,8 @@
+inherit_defaults = true
+
+[filter]
+ignore_dirs   = ["third_party"]
+exclude_globs = ["tests/fixtures/*"]
+
+[limits]
+max_file_size_kb = 300

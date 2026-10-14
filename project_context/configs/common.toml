@@ -1,0 +1,54 @@
+schema_version = 1
+inherit_defaults = true
+
+[filter]
+ignore_dirs = [
+  ".git", ".hg", ".svn", ".bzr",
+  ".idea", ".vscode", ".vs", ".settings", ".fleet", ".history",
+  "__pycache__", ".cache", ".ipynb_checkpoints",
+  "build", "dist", "out",
+  "htmlcov", "coverage",
+]
+ignore_dir_globs = [".git*", "docs/_build", "cmake-build-*"]
+
+ignore_suffixes = [
+  # 二进制 / 编译产物
+  ".pyc", ".pyo", ".pyd", ".so", ".dll", ".dylib", ".a", ".o", ".obj",
+  ".class", ".jar", ".exe", ".bin", ".wasm", ".lib", ".exp",
+  # 数据 / 序列化
+  ".db", ".sqlite", ".sqlite3", ".dat", ".pkl", ".pickle",
+  ".npy", ".npz", ".parquet", ".h5", ".hdf5", ".pt", ".pth",
+  ".onnx", ".ckpt", ".safetensors", ".gguf", ".vocab",
+  # 图片 / 音视频 / 字体
+  ".png", ".jpg", ".jpeg", ".gif", ".bmp", ".ico", ".webp",
+  ".tiff", ".psd", ".ai", ".eps",
+  ".mp3", ".mp4", ".avi", ".mov", ".wav", ".flac", ".ogg", ".mkv",
+  ".ttf", ".otf", ".woff", ".woff2", ".eot",
+  # 压缩包
+  ".zip", ".tar", ".gz", ".bz2", ".xz", ".7z", ".rar", ".whl", ".egg",
+  # 锁文件 / 日志 / 临时文件
+  ".lock", ".log", ".tmp", ".temp", ".bak", ".orig", ".swp", ".swo", ".rej",
+  # 文档 / 表格
+  ".ipynb", ".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx",
+  # 其他
+  ".map", ".min.js", ".min.css",
+]
+ignore_file_globs = [
+  ".DS_Store", "Thumbs.db", "desktop.ini", "*.pyc", "*.pyo",
+]
+exclude_globs = []
+
+[limits]
+max_file_size_kb     = 200
+max_git_commits      = 50
+max_files_per_commit = 20
+
+[features]
+include_content = true
+include_ast     = true
+include_git     = true
+no_timestamp    = false
+
+[languages]
+active           = "auto"
+detect_min_files = 1

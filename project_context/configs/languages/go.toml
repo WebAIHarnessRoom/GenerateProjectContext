@@ -1,0 +1,19 @@
+schema_version = 1
+name = "go"
+inherit_defaults = true
+active = true
+
+[detect]
+suffixes    = [".go"]
+file_globs  = ["go.mod", "go.sum"]
+dir_markers = ["go.mod"]
+
+[filter]
+ignore_dirs     = ["vendor"]
+ignore_suffixes = [".test", ".out"]
+
+[code_langs]
+".go" = "go"
+
+[ast]
+parser = "none"

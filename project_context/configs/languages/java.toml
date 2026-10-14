@@ -1,0 +1,22 @@
+schema_version = 1
+name = "java"
+inherit_defaults = true
+active = true
+
+[detect]
+suffixes    = [".java", ".kt", ".kts", ".gradle"]
+file_globs  = ["pom.xml", "build.gradle", "settings.gradle"]
+dir_markers = ["pom.xml", "build.gradle"]
+
+[filter]
+ignore_dirs     = ["target", ".gradle", ".mvn", "out"]
+ignore_suffixes = [".class"]
+
+[code_langs]
+".java"   = "java"
+".kt"     = "kotlin"
+".kts"    = "kotlin"
+".gradle" = "groovy"
+
+[ast]
+parser = "none"

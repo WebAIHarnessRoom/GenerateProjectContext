@@ -1,0 +1,19 @@
+schema_version = 1
+name = "rust"
+inherit_defaults = true
+active = true
+
+[detect]
+suffixes    = [".rs"]
+file_globs  = ["Cargo.toml", "Cargo.lock"]
+dir_markers = ["Cargo.toml"]
+
+[filter]
+ignore_dirs     = ["target"]
+ignore_suffixes = [".rlib", ".rmeta"]
+
+[code_langs]
+".rs" = "rust"
+
+[ast]
+parser = "none"

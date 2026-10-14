@@ -1,0 +1,25 @@
+schema_version = 1
+name = "cpp"
+inherit_defaults = true
+active = true
+
+[detect]
+suffixes    = [".c", ".h", ".cpp", ".hpp", ".cc", ".cxx", ".hxx"]
+file_globs  = ["CMakeLists.txt", "Makefile", "meson.build"]
+dir_markers = ["CMakeLists.txt"]
+
+[filter]
+ignore_dirs = ["cmake-build-*", "_build", ".cache"]
+ignore_dir_globs = ["cmake-build-*", "_build"]
+ignore_suffixes = [".o", ".obj", ".a", ".so", ".dll", ".dylib", ".exp", ".lib"]
+
+[code_langs]
+".c"   = "c"
+".h"   = "c"
+".cpp" = "cpp"
+".hpp" = "cpp"
+".cc"  = "cpp"
+".cxx" = "cpp"
+
+[ast]
+parser = "none"

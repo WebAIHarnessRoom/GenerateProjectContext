@@ -1,0 +1,28 @@
+schema_version = 1
+name = "node"
+inherit_defaults = true
+active = true
+
+[detect]
+suffixes    = [".js", ".mjs", ".cjs", ".ts", ".tsx", ".jsx"]
+file_globs  = ["package.json", "tsconfig.json"]
+dir_markers = ["package.json"]
+
+[filter]
+ignore_dirs = [
+  "node_modules", ".next", ".nuxt", ".turbo", ".parcel-cache",
+  ".svelte-kit", ".angular", "coverage", ".npm", ".pnpm-store",
+]
+ignore_suffixes   = [".map", ".tsbuildinfo"]
+ignore_file_globs = ["package-lock.json", "yarn.lock", "pnpm-lock.yaml"]
+
+[code_langs]
+".js"  = "javascript"
+".mjs" = "javascript"
+".cjs" = "javascript"
+".ts"  = "typescript"
+".tsx" = "tsx"
+".jsx" = "jsx"
+
+[ast]
+parser = "none"
