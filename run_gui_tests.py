@@ -2456,6 +2456,153 @@ else:
     skip("I-CFG-07 RunTab 有“查看配置加载说明”按钮",
          "PySide6 未安装")
 
+if has_qt():
+    @test("I-CFG-08 LayerInfo 有 edit_hint / edit_target")
+    def _():
+        from project_context_gui.services.config_introspection import (
+            introspect,
+        )
+        tmp = Path(tempfile.mkdtemp(prefix="pcgui_cfg_"))
+        try:
+            cfg = tmp / ".project_context"
+            cfg.mkdir()
+            (cfg / "common.toml").write_text(
+                'inherit_defaults = true\n', encoding="utf-8"
+            )
+            r = introspect(root=str(tmp))
+            A.in_("配置文件", r.layer_project.edit_hint)
+            A.eq(r.layer_project.edit_target, "config_tab")
+            A.eq(r.layer_session.edit_target, "run_tab_filter")
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+else:
+    skip("I-CFG-08 LayerInfo 有 edit_hint / edit_target",
+         "PySide6 未安装")
+
+
+if has_qt():
+    @test("I-CFG-09 ConfigHelpDialog 有 jump_target / solidified")
+    def _():
+        _ensure_qt_app()
+        from project_context_gui.dialogs.config_help_dialog import (
+            ConfigHelpDialog,
+        )
+        from project_context_gui.services.config_introspection import (
+            introspect,
+        )
+        tmp = Path(tempfile.mkdtemp(prefix="pcgui_cfg_"))
+        try:
+            result = introspect(root=str(tmp))
+            dlg = ConfigHelpDialog(result)
+            try:
+                A.eq(dlg.jump_target, "")
+                A.false(dlg.solidified)
+            finally:
+                dlg.deleteLater()
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+else:
+    skip("I-CFG-09 ConfigHelpDialog 有 jump_target / solidified",
+         "PySide6 未安装")
+
+
+if has_qt():
+    @test("I-CFG-10 ConfigTab 顶部有三层提示")
+    def _():
+        _ensure_qt_app()
+        from project_context_gui.tabs.config_tab import ConfigTab
+        from PySide6.QtWidgets import QLabel
+        tab = ConfigTab()
+        try:
+            labels = tab.findChildren(QLabel)
+            texts = [l.text() for l in labels]
+            A.true(any("② 项目配置" in t for t in texts))
+        finally:
+            tab.deleteLater()
+else:
+    skip("I-CFG-10 ConfigTab 顶部有三层提示", "PySide6 未安装")
+
+
+if has_qt():
+    @test("U-CFG-11 SolidifyRulesDialog 生成合并预览")
+    def _():
+        _ensure_qt_app()
+        from project_context_gui.dialogs.solidify_rules_dialog import (
+            SolidifyRulesDialog,
+        )
+        from project_context_gui.state import RunState
+
+        tmp = Path(tempfile.mkdtemp(prefix="pcgui_solid_"))
+        try:
+            cfg = tmp / ".project_context"
+            cfg.mkdir()
+            (cfg / "common.toml").write_text(
+                'inherit_defaults = true\n[filter]\n'
+                'ignore_dirs = ["third_party"]\n',
+                encoding="utf-8",
+            )
+
+            s = RunState(
+                root=str(tmp),
+                exclude_dirs=["third_party", "build"],
+                exclude_globs=["*.pb.go"],
+            )
+            dlg = SolidifyRulesDialog(s, str(tmp))
+            try:
+                preview = dlg._preview.toPlainText()
+                A.in_("build", preview)
+                A.in_("*.pb.go", preview)
+                A.in_("+ build", preview)
+                A.not_in("+ third_party", preview)
+            finally:
+                dlg.deleteLater()
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+else:
+    skip("U-CFG-11 SolidifyRulesDialog 生成合并预览",
+         "PySide6 未安装")
+
+
+if has_qt():
+    @test("U-CFG-12 SolidifyRulesDialog 写入后清空 L3")
+    def _():
+        _ensure_qt_app()
+        from project_context_gui.dialogs.solidify_rules_dialog import (
+            SolidifyRulesDialog, HAS_TOMLKIT,
+        )
+        if not HAS_TOMLKIT:
+            # 环境缺 tomlkit 时，直接跳过，不进入弹窗路径
+            return
+        from project_context_gui.state import RunState
+
+        tmp = Path(tempfile.mkdtemp(prefix="pcgui_solid_"))
+        try:
+            s = RunState(
+                root=str(tmp),
+                exclude_dirs=["build"],
+                exclude_globs=["*.pb.go"],
+            )
+            dlg = SolidifyRulesDialog(s, str(tmp))
+            try:
+                dlg._clear_after.setChecked(True)
+                ok = dlg.try_accept()      # 静默
+                A.true(ok)
+                A.eq(s.exclude_dirs, [])
+                A.eq(s.exclude_globs, [])
+                written = dlg.written_path()
+                A.true(written is not None)
+                A.true(written.is_file())
+                text = written.read_text(encoding="utf-8")
+                A.in_("build", text)
+                A.in_("*.pb.go", text)
+            finally:
+                dlg.deleteLater()
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+else:
+    skip("U-CFG-12 SolidifyRulesDialog 写入后清空 L3",
+         "PySide6 未安装")
+
 # ===========================================================================
 # 运行器
 # ===========================================================================

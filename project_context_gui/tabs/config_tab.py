@@ -33,7 +33,7 @@ from project_context_gui.widgets.toml_editor import TomlEditor
 class ConfigTab(QWidget):
     """配置文件 Tab。"""
 
-    saved = Signal()          # 保存成功后发出
+    saved = Signal()
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -50,6 +50,27 @@ class ConfigTab(QWidget):
         outer.setContentsMargins(12, 12, 12, 12)
         outer.setSpacing(8)
 
+        # 三层提示（本次新增）
+        layer_hint = QLabel(
+            "ℹ 这里编辑的是三层配置的「② 项目配置」层，会随项目分发；"
+            "想临时追加规则，请到「运行配置」Tab 的过滤面板。"
+        )
+        layer_hint.setWordWrap(True)
+        layer_hint.setStyleSheet(
+            "color:#005cc5; background:#f0f7ff; "
+            "padding: 6px; border-radius: 4px;"
+        )
+        outer.addWidget(layer_hint)
+
+        h_row = QHBoxLayout()
+        help_btn = QPushButton("查看配置加载说明")
+        help_btn.setFixedWidth(160)
+        help_btn.clicked.connect(self._on_show_config_help)
+        h_row.addWidget(help_btn)
+        h_row.addStretch(1)
+        outer.addLayout(h_row)
+
+        # 状态提示行（原有）
         self._hint = QLabel("请先选择项目")
         self._hint.setStyleSheet("color:#666;")
         outer.addWidget(self._hint)
@@ -147,49 +168,31 @@ class ConfigTab(QWidget):
         return bool(self._current and self._editor.dirty)
 
     def try_save(self) -> bool:
-        """给外部（切 Tab / 关闭窗口 / 测试）调用的保存入口。
-
-        不弹任何模态对话框。返回 True 表示保存成功或无需保存。
-        """
         if not self._current or not self._editor.dirty:
             return True
         return self._save(silent=True)
 
-    def _on_save(self) -> None:
-        """工具栏“保存”按钮入口。允许弹窗提示失败。"""
-        self._save(silent=False)
+    # ------------------------------------------------------------------
+    # 配置加载说明
+    # ------------------------------------------------------------------
 
-    def _save(self, silent: bool = False) -> bool:
-        """实际保存逻辑。silent=True 时不弹模态对话框。"""
-        if not self._current:
-            return True
-
-        text = self._editor.toPlainText()
-        ok, msg, line = validate_toml(text)
-        if not ok:
-            self._editor.set_error_line(line)
-            self._status.setText(f"❌ {msg}")
-            self._status.setStyleSheet("color:#c0392b;")
-            if not silent:
-                QMessageBox.warning(
-                    self, "无法保存", f"TOML 语法错误：\n{msg}"
-                )
-            return False
-
-        try:
-            self._svc.write(self._current.path, text)
-        except OSError as e:
-            if not silent:
-                QMessageBox.critical(self, "保存失败", str(e))
-            return False
-
-        self._editor.set_dirty(False)
-        self._refresh_current_marker()
-        self._status.setText(f"已保存：{self._current.rel_path}")
-        self._status.setStyleSheet("color:#2d8f4e;")
-        self._update_buttons()
-        self.saved.emit()
-        return True
+    def _on_show_config_help(self) -> None:
+        from project_context_gui.dialogs.config_help_dialog import (
+            ConfigHelpDialog,
+        )
+        from project_context_gui.services.config_introspection import (
+            introspect,
+        )
+        root = str(self._svc.root) if self._svc.root else ""
+        result = introspect(root=root, run_state=None)
+        dlg = ConfigHelpDialog(result, self, project_root=root)
+        dlg.exec()
+        # 若用户点了“去编辑”但目标就是本 Tab，无需切换；
+        # 若目标是 run_tab_filter，通知主窗口
+        if dlg.jump_target == "run_tab_filter":
+            w = self.window()
+            if hasattr(w, "_on_config_help_jump"):
+                w._on_config_help_jump("run_tab_filter")
 
     # ------------------------------------------------------------------
     # 列表刷新
@@ -247,11 +250,7 @@ class ConfigTab(QWidget):
     # 选择文件
     # ------------------------------------------------------------------
 
-    def _on_select(
-        self,
-        item: QListWidgetItem | None,
-        _prev: QListWidgetItem | None,
-    ) -> None:
+    def _on_select(self, item, _prev) -> None:
         if item is None:
             return
         cf: ConfigFile = item.data(Qt.UserRole)
@@ -266,7 +265,6 @@ class ConfigTab(QWidget):
                 QMessageBox.No,
             )
             if ret != QMessageBox.Yes:
-                # 回滚到原选中
                 self._list.blockSignals(True)
                 for i in range(self._list.count()):
                     other = self._list.item(i)
@@ -357,6 +355,39 @@ class ConfigTab(QWidget):
         self._editor.set_dirty(True)
         self._status.setText("已格式化")
 
+    def _on_save(self) -> None:
+        self._save(silent=False)
+
+    def _save(self, silent: bool = False) -> bool:
+        if not self._current:
+            return True
+
+        text = self._editor.toPlainText()
+        ok, msg, line = validate_toml(text)
+        if not ok:
+            self._editor.set_error_line(line)
+            self._status.setText(f"❌ {msg}")
+            self._status.setStyleSheet("color:#c0392b;")
+            if not silent:
+                QMessageBox.warning(
+                    self, "无法保存", f"TOML 语法错误：\n{msg}"
+                )
+            return False
+
+        try:
+            self._svc.write(self._current.path, text)
+        except OSError as e:
+            if not silent:
+                QMessageBox.critical(self, "保存失败", str(e))
+            return False
+
+        self._editor.set_dirty(False)
+        self._refresh_current_marker()
+        self._status.setText(f"已保存：{self._current.rel_path}")
+        self._status.setStyleSheet("color:#2d8f4e;")
+        self._update_buttons()
+        self.saved.emit()
+        return True
 
     # ------------------------------------------------------------------
     # 新建 / 删除

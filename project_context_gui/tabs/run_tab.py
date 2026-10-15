@@ -1,4 +1,4 @@
-"""运行配置 Tab —— 项目、输出、语言、内容开关、过滤、限制、命令预览。"""
+"""运行配置 Tab。"""
 from __future__ import annotations
 
 from pathlib import Path
@@ -8,11 +8,11 @@ from PySide6.QtWidgets import (
     QApplication,
     QButtonGroup,
     QCheckBox,
-    QComboBox,
     QDialog,
     QDialogButtonBox,
     QFileDialog,
     QFormLayout,
+    QFrame,
     QGridLayout,
     QGroupBox,
     QHBoxLayout,
@@ -23,17 +23,22 @@ from PySide6.QtWidgets import (
     QPlainTextEdit,
     QPushButton,
     QRadioButton,
+    QScrollArea,
     QSpinBox,
     QToolButton,
     QVBoxLayout,
     QWidget,
 )
 
+from project_context_gui.services.runner_resolver import (
+    ResolvedCommand,          # noqa: F401  (对外暴露给类型注解)
+    make_python_command,      # noqa: F401
+)
 from project_context_gui.state import (
+    DEFAULT_DETECT_MIN_FILES,
     DEFAULT_MAX_FILES_PER_COMMIT,
     DEFAULT_MAX_FILE_SIZE_KB,
     DEFAULT_MAX_GIT_COMMITS,
-    DEFAULT_DETECT_MIN_FILES,
     RunState,
     build_cli_args,
     format_command,
@@ -42,10 +47,7 @@ from project_context_gui.widgets.collapsible import Collapsible
 from project_context_gui.widgets.file_picker import FilePicker
 from project_context_gui.widgets.folder_picker import FolderPicker
 from project_context_gui.widgets.list_editor import ListEditor
-from project_context_gui.services.runner_resolver import (
-    ResolvedCommand,
-    make_python_command,
-)
+
 
 _BUILTIN_LANGUAGES = [
     "python", "node", "go", "rust", "java",
@@ -58,33 +60,30 @@ class RunTab(QWidget):
 
     requestRun = Signal()
     requestStop = Signal()
-    stateChanged = Signal()          # 参数变化，用于刷新预览
+    stateChanged = Signal()
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._resolver = None
-        self._default_output_name = "PROJECT_CONTEXT.md"
         self._build_ui()
         self._connect()
         self._refresh_command_preview()
 
-    # -- 构造 -------------------------------------------------------------
+    # ------------------------------------------------------------------
+    # 构造
+    # ------------------------------------------------------------------
 
     def _build_ui(self) -> None:
-        from PySide6.QtWidgets import QFrame, QScrollArea
-
-        # 外层：仅放一个 QScrollArea
         outer = QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
         outer.setSpacing(0)
 
         scroll = QScrollArea()
-        scroll.setWidgetResizable(True)                       # 内容随宽度自适应
-        scroll.setFrameShape(QFrame.NoFrame)                  # 去掉边框
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.NoFrame)
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
 
-        # 内容容器：原来所有区块都放这里
         content = QWidget()
         inner = QVBoxLayout(content)
         inner.setContentsMargins(12, 12, 12, 12)
@@ -149,7 +148,6 @@ class RunTab(QWidget):
         box = QGroupBox("语言")
         lay = QVBoxLayout(box)
 
-        # 三个 radio
         radio_row = QHBoxLayout()
         self._lang_auto = QRadioButton("自动检测")
         self._lang_all = QRadioButton("全部语言")
@@ -165,7 +163,6 @@ class RunTab(QWidget):
         radio_row.addStretch(1)
         lay.addLayout(radio_row)
 
-        # 自定义语言：列表 + 添加按钮
         self._lang_list = QListWidget()
         self._lang_list.setFixedHeight(72)
         self._lang_list.setVisible(False)
@@ -179,7 +176,6 @@ class RunTab(QWidget):
         custom_row.addWidget(self._lang_add_btn, 0, Qt.AlignTop)
         lay.addLayout(custom_row)
 
-        # 检测阈值
         thresh_row = QHBoxLayout()
         thresh_row.addWidget(QLabel("检测阈值："))
         self._detect_spin = QSpinBox()
@@ -214,7 +210,7 @@ class RunTab(QWidget):
         return box
 
     def _build_filter_into(self, lay: QVBoxLayout) -> None:
-        # 顶部：说明文字 + 帮助按钮
+        # 顶部说明 + 帮助按钮
         head = QHBoxLayout()
         desc = QLabel(
             "这些规则会追加到「工具内置规则」与「项目配置」之上，"
@@ -244,7 +240,7 @@ class RunTab(QWidget):
         self._cb_no_inherit.toggled.connect(self._emit_changed)
         lay.addWidget(self._cb_no_inherit)
 
-        # 四个列表编辑器
+        # 四个编辑器
         self._ex_globs = ListEditor(
             "排除文件 glob",
             placeholder="例如 *.pb.go",
@@ -266,7 +262,6 @@ class RunTab(QWidget):
             hint="按文件后缀排除，例如 .bak",
         )
 
-        # 给"排除目录名"追加文件夹选择按钮
         self._ex_dirs.add_tool_button(
             "从文件夹选择…", self._on_pick_exclude_dir
         )
@@ -276,15 +271,15 @@ class RunTab(QWidget):
         lay.addWidget(self._ex_dir_globs)
         lay.addWidget(self._ex_suffixes)
 
-        # 底部按钮行
+        # 底部按钮
         btn_row = QHBoxLayout()
         preview_btn = QPushButton("预览最终生效规则")
         preview_btn.clicked.connect(self._on_preview_effective_rules)
         btn_row.addWidget(preview_btn)
 
-        help2_btn = QPushButton("查看配置加载说明")
-        help2_btn.clicked.connect(self._on_show_config_help)
-        btn_row.addWidget(help2_btn)
+        # help2_btn = QPushButton("查看配置加载说明")
+        # help2_btn.clicked.connect(self._on_show_config_help)
+        # btn_row.addWidget(help2_btn)
 
         btn_row.addStretch(1)
         lay.addLayout(btn_row)
@@ -333,38 +328,37 @@ class RunTab(QWidget):
         lay.addWidget(self._cmd_view)
         lay.addLayout(row)
 
-    # -- 信号连接 ---------------------------------------------------------
+    # ------------------------------------------------------------------
+    # 信号连接
+    # ------------------------------------------------------------------
 
     def _connect(self) -> None:
-        # 项目/输出
         self._root_picker.pathChanged.connect(self._on_root_changed)
         self._output_picker.pathChanged.connect(self._on_output_changed)
         self._quiet_cb.toggled.connect(self._emit_changed)
 
-        # 语言
         self._lang_group.buttonToggled.connect(self._on_lang_mode_changed)
         self._lang_add_btn.clicked.connect(self._on_add_languages)
         self._detect_spin.valueChanged.connect(self._emit_changed)
 
-        # 内容
         for cb in (self._cb_content, self._cb_ast, self._cb_git, self._cb_ts):
             cb.toggled.connect(self._emit_changed)
 
-        # 过滤
         for editor in (self._ex_globs, self._ex_dirs,
                        self._ex_dir_globs, self._ex_suffixes):
             editor.changed.connect(self._emit_changed)
 
-        # 限制
         self._max_size.valueChanged.connect(self._emit_changed)
         self._max_commits.valueChanged.connect(self._emit_changed)
         self._max_files.valueChanged.connect(self._emit_changed)
 
-    # -- 联动 -------------------------------------------------------------
+    # ------------------------------------------------------------------
+    # 联动
+    # ------------------------------------------------------------------
 
     def _on_root_changed(self, path: str) -> None:
         if path and not self._output_picker.path():
-            name = self._default_output_name or "PROJECT_CONTEXT.md"
+            name = "PROJECT_CONTEXT.md"
             self._output_picker.set_path(str(Path(path) / name))
         self._check_output_exists()
         self._emit_changed()
@@ -392,6 +386,12 @@ class RunTab(QWidget):
                     self._lang_list.addItem(QListWidgetItem(lang))
             self._emit_changed()
 
+    def _custom_languages(self) -> list:
+        return [
+            self._lang_list.item(i).text()
+            for i in range(self._lang_list.count())
+        ]
+
     def _on_pick_exclude_dir(self) -> None:
         """从项目根目录打开文件夹选择器，把选中目录加入排除列表。"""
         root = self._root_picker.path()
@@ -417,12 +417,6 @@ class RunTab(QWidget):
         self._emit_changed()
 
     def _normalize_exclude_dir(self, chosen: Path, root: str) -> str:
-        """把选中的绝对路径转成适合放进排除列表的值。
-
-        - 项目根的直接子目录 → 目录名（例如 third_party）
-        - 更深的目录         → 相对路径（例如 src/generated）
-        - 不在项目根下       → 绝对路径
-        """
         if not root:
             return str(chosen)
         try:
@@ -436,10 +430,30 @@ class RunTab(QWidget):
             return parts[0]
         return str(rel).replace("\\", "/")
 
-    # -- 配置说明与最终规则预览 -------------------------------------------
+    def _emit_changed(self, *_args) -> None:
+        self._refresh_command_preview()
+        self.stateChanged.emit()
+
+    def _copy_command(self) -> None:
+        QApplication.clipboard().setText(self._cmd_view.toPlainText())
+
+    def _refresh_command_preview(self) -> None:
+        state = self.collect_state()
+        if self._resolver is not None:
+            cli_args = build_cli_args(state)
+            cmd = self._resolver.resolve(cli_args)
+            self._cmd_view.setPlainText(cmd.display)
+            return
+
+        program = "python -m project_context"
+        args = build_cli_args(state)
+        self._cmd_view.setPlainText(format_command(program, args))
+
+    # ------------------------------------------------------------------
+    # 配置加载说明 / 最终生效规则
+    # ------------------------------------------------------------------
 
     def _on_show_config_help(self) -> None:
-        """打开配置加载说明对话框。"""
         from project_context_gui.dialogs.config_help_dialog import (
             ConfigHelpDialog,
         )
@@ -448,7 +462,6 @@ class RunTab(QWidget):
         )
 
         state = self.collect_state()
-
         mode = "python"
         exe_path = ""
         python_path = ""
@@ -471,22 +484,33 @@ class RunTab(QWidget):
             exe_path=exe_path,
             python_path=python_path,
         )
-        dlg = ConfigHelpDialog(result, self)
+        dlg = ConfigHelpDialog(
+            result, self,
+            project_root=state.root or "",
+            run_state=state,
+        )
         dlg.exec()
 
+        if dlg.jump_target == "config_tab":
+            w = self.window()
+            if hasattr(w, "_on_config_help_jump"):
+                w._on_config_help_jump("config_tab")
+        elif dlg.jump_target == "run_tab_filter":
+            self._filter_block._toggle.setChecked(True)
+
+        if dlg.solidified:
+            self._refresh_command_preview()
+            self.stateChanged.emit()
+
     def _on_preview_effective_rules(self) -> None:
-        """打开最终生效规则对话框。"""
         from project_context_gui.dialogs.effective_rules_dialog import (
             EffectiveRulesDialog,
         )
 
         state = self.collect_state()
         if not state.root:
-            QMessageBox.warning(
-                self, "无法预览", "请先选择项目。"
-            )
+            QMessageBox.warning(self, "无法预览", "请先选择项目。")
             return
-
         if self._resolver is None:
             QMessageBox.warning(
                 self, "无法预览", "尚未初始化执行引擎。"
@@ -504,35 +528,13 @@ class RunTab(QWidget):
         )
         dlg.exec()
 
-    # -- 状态收集 ---------------------------------------------------------
+    # ------------------------------------------------------------------
+    # 对外
+    # ------------------------------------------------------------------
 
-    def _custom_languages(self) -> list[str]:
-        return [
-            self._lang_list.item(i).text()
-            for i in range(self._lang_list.count())
-        ]
-
-    def _emit_changed(self, *_args) -> None:
+    def set_resolver(self, resolver) -> None:
+        self._resolver = resolver
         self._refresh_command_preview()
-        self.stateChanged.emit()
-
-    def _copy_command(self) -> None:
-        QApplication.clipboard().setText(self._cmd_view.toPlainText())
-
-    def _refresh_command_preview(self) -> None:
-        state = self.collect_state()
-        if self._resolver is not None:
-            cli_args = build_cli_args(state)
-            cmd = self._resolver.resolve(cli_args)
-            self._cmd_view.setPlainText(cmd.display)
-            return
-
-        # 未注入 resolver 时保持旧行为（兼容既有测试）
-        program = "python -m project_context"
-        args = build_cli_args(state)
-        self._cmd_view.setPlainText(format_command(program, args))
-
-    # -- 对外 -------------------------------------------------------------
 
     def collect_state(self) -> RunState:
         if self._lang_auto.isChecked():
@@ -557,40 +559,27 @@ class RunTab(QWidget):
             include_ast=self._cb_ast.isChecked(),
             include_git=self._cb_git.isChecked(),
             no_timestamp=self._cb_ts.isChecked(),
+            no_inherit_defaults=self._cb_no_inherit.isChecked(),
             max_file_size_kb=self._max_size.value(),
             max_git_commits=self._max_commits.value(),
             max_files_per_commit=self._max_files.value(),
-            no_inherit_defaults=(
-                self._cb_no_inherit.isChecked()
-                if hasattr(self, "_cb_no_inherit") else False
-            ),
         )
 
     def set_root(self, path: str) -> None:
         self._root_picker.set_path(path)
-        # 强制重新推导输出
         self._output_picker.set_path("")
         self._on_root_changed(path)
 
-    def set_resolver(self, resolver) -> None:
-        """由 MainWindow 注入 RunnerResolver。"""
-        self._resolver = resolver
-        self._refresh_command_preview()
-
     def apply_settings(self, default_output_name: str) -> None:
-        """由主窗口把用户偏好注入。"""
         self._default_output_name = default_output_name
 
     def set_enabled_for_running(self, running: bool) -> None:
-        """运行中禁用配置控件。"""
         for w in self.findChildren(QWidget):
             if w is self._cmd_view:
                 continue
-            # 仅禁用输入类控件；按钮/标签无需处理
-            if isinstance(w, (QPushButton, QToolButton)):
+            if isinstance(w, QPushButton):
                 continue
             w.setEnabled(not running)
-        # 命令预览始终可复制
         self._cmd_view.setEnabled(True)
 
     def output_path(self) -> str:
@@ -606,7 +595,7 @@ class _LanguageDialog(QDialog):
         self.setMinimumWidth(280)
 
         lay = QVBoxLayout(self)
-        self._checks: dict[str, QCheckBox] = {}
+        self._checks = {}
         for lang in _BUILTIN_LANGUAGES:
             cb = QCheckBox(lang)
             self._checks[lang] = cb
@@ -619,5 +608,5 @@ class _LanguageDialog(QDialog):
         bb.rejected.connect(self.reject)
         lay.addWidget(bb)
 
-    def selected(self) -> list[str]:
+    def selected(self) -> list:
         return [k for k, cb in self._checks.items() if cb.isChecked()]

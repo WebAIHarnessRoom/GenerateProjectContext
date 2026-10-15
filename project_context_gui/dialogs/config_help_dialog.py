@@ -3,14 +3,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PySide6.QtCore import Qt
-from PySide6.QtGui import QDesktopServices, QFont
-from PySide6.QtCore import QUrl
+from PySide6.QtCore import QUrl, Qt
+from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
     QApplication,
     QDialog,
-    QDialogButtonBox,
-    QFrame,
     QGroupBox,
     QHBoxLayout,
     QLabel,
@@ -34,18 +31,38 @@ class ConfigHelpDialog(QDialog):
         self,
         introspection: IntrospectionResult,
         parent: QWidget | None = None,
+        *,
+        project_root: str = "",
+        run_state=None,
     ) -> None:
         super().__init__(parent)
         self._result = introspection
+        self._project_root = project_root
+        self._run_state = run_state
+        self._jump_target: str = ""
+        self._solidified: bool = False
         self.setWindowTitle("配置加载说明")
-        self.setMinimumSize(680, 640)
+        self.setMinimumSize(680, 680)
         self._build_ui()
+
+    # -- 对外 -----------------------------------------------------------
+
+    @property
+    def jump_target(self) -> str:
+        """如果用户点了“去编辑”，返回目标 Tab；否则空字符串。"""
+        return self._jump_target
+
+    @property
+    def solidified(self) -> bool:
+        """是否执行过“固化到项目配置”。"""
+        return self._solidified
+
+    # ------------------------------------------------------------------
 
     def _build_ui(self) -> None:
         v = QVBoxLayout(self)
         v.setSpacing(10)
 
-        # 标题
         title = QLabel("配置加载顺序")
         f = title.font()
         f.setPointSize(14)
@@ -54,16 +71,16 @@ class ConfigHelpDialog(QDialog):
         v.addWidget(title)
 
         intro = QLabel(
-            "本工具会把三层排除规则依次叠加使用，越靠下的优先级越高、"
-            "越先被检查。最终生效的规则是三层合并的结果。"
+            "本工具会把三层排除规则依次叠加使用。最终生效的规则是三层"
+            "合并的结果。每一层都有对应的编辑入口，见卡片右侧按钮。"
         )
         intro.setWordWrap(True)
         intro.setStyleSheet("color:#555;")
         v.addWidget(intro)
 
-        # 滚动区
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
+        from PySide6.QtWidgets import QFrame
         scroll.setFrameShape(QFrame.NoFrame)
 
         content = QWidget()
@@ -71,7 +88,6 @@ class ConfigHelpDialog(QDialog):
         cv.setContentsMargins(0, 0, 8, 0)
         cv.setSpacing(6)
 
-        # 三层卡片
         layers = self._result.all_layers()
         for i, layer in enumerate(layers):
             cv.addWidget(self._make_layer_card(layer))
@@ -81,10 +97,7 @@ class ConfigHelpDialog(QDialog):
             )
             cv.addWidget(arrow)
 
-        # 最终生效
         cv.addWidget(self._make_final_card())
-
-        # 常见问题
         cv.addWidget(self._make_faq_card())
         cv.addStretch(1)
 
@@ -108,6 +121,8 @@ class ConfigHelpDialog(QDialog):
 
         v.addLayout(row)
 
+    # ------------------------------------------------------------------
+    # 单层卡片
     # ------------------------------------------------------------------
 
     def _make_layer_card(self, layer: LayerInfo) -> QWidget:
@@ -148,7 +163,7 @@ class ConfigHelpDialog(QDialog):
                 pl.setTextInteractionFlags(Qt.TextSelectableByMouse)
                 v.addWidget(pl)
 
-        # 文件列表（折叠）
+        # 文件列表
         if layer.files:
             toggle = QToolButton()
             toggle.setText(f"▸ 已加载 {len(layer.files)} 个配置文件")
@@ -172,10 +187,8 @@ class ConfigHelpDialog(QDialog):
 
             def _on_toggle(checked, box=file_box, btn=toggle):
                 box.setVisible(checked)
-                btn.setText(
-                    ("▾ " if checked else "▸ ")
-                    + btn.text().split(" ", 1)[-1]
-                )
+                label = btn.text().split(" ", 1)[-1]
+                btn.setText(("▾ " if checked else "▸ ") + label)
 
             toggle.toggled.connect(_on_toggle)
             v.addWidget(toggle)
@@ -188,12 +201,46 @@ class ConfigHelpDialog(QDialog):
             note.setWordWrap(True)
             v.addWidget(note)
 
-        if not layer.available and not layer.note:
+        if not layer.available and not layer.note and not layer.files:
             na = QLabel("（此层当前不可用）")
             na.setStyleSheet("color:#999; font-size: 11px;")
             v.addWidget(na)
 
+        # 编辑入口
+        if layer.edit_hint:
+            edit_row = QHBoxLayout()
+            hint = QLabel(f"✎ {layer.edit_hint}")
+            hint.setStyleSheet("color:#005cc5; font-size: 11px;")
+            edit_row.addWidget(hint, 1)
+
+            if layer.edit_target:
+                btn = QPushButton("去编辑 →")
+                btn.setFixedWidth(100)
+                btn.clicked.connect(
+                    lambda _=False, t=layer.edit_target:
+                    self._on_jump_to(t)
+                )
+                edit_row.addWidget(btn)
+
+            v.addLayout(edit_row)
+
+        # L3 层额外加"固化到项目配置"
+        if layer.marker == "③" and layer.rules_count > 0:
+            sol_row = QHBoxLayout()
+            sh = QLabel("⇪ 想永久生效？")
+            sh.setStyleSheet("color:#666; font-size: 11px;")
+            sol_row.addWidget(sh, 1)
+
+            sbtn = QPushButton("固化到项目配置")
+            sbtn.setFixedWidth(150)
+            sbtn.clicked.connect(self._on_solidify)
+            sol_row.addWidget(sbtn)
+
+            v.addLayout(sol_row)
+
         return card
+
+    # ------------------------------------------------------------------
 
     def _make_final_card(self) -> QWidget:
         card = QGroupBox()
@@ -220,7 +267,8 @@ class ConfigHelpDialog(QDialog):
         v.addLayout(head)
 
         desc = QLabel(
-            "① + ② + ③ 合并的结果。若勾选了“忽略项目配置”，② 会被跳过。"
+            "① + ② + ③ 合并的结果。"
+            "若勾选了“忽略项目配置”，② 会被跳过。"
         )
         desc.setStyleSheet("color:#555; font-size: 11px;")
         desc.setWordWrap(True)
@@ -234,24 +282,29 @@ class ConfigHelpDialog(QDialog):
         v.setSpacing(2)
 
         qa_list = [
+            ("我在 GUI 加的规则和项目里的配置冲突怎么办？",
+             "不冲突，会叠加：\n"
+             "  • 项目里 ignore_dirs = [\"third_party\"]\n"
+             "  • GUI 加 --exclude-dir build\n"
+             "  最终两者都生效。"),
             ("为什么项目里的规则没生效？",
-             "① 检查项目根下是否存在 .project_context/；\n"
-             "② 确认该规则所在的文件已被加载（展开上一层卡片查看）；\n"
+             "① 展开上方“② 项目配置”卡片，看是否已加载文件；\n"
+             "② 若显示“未发现 .project_context/”，"
+             "点“去编辑 →”到「配置文件」Tab 新建；\n"
              "③ 若规则存在但目录还在，注意区分：\n"
              "    - ignore_dirs 精确匹配目录名\n"
              "    - ignore_dir_globs 支持通配符"),
             ("切换项目后 GUI 里的规则还在吗？",
-             "“本次追加”的规则是全局的，不随项目切换。\n"
-             "如需每条规则只对特定项目生效，请写进项目的 "
-             ".project_context/。"),
+             "“本次追加”（③ 层）的规则是全局的，不随项目切换。\n"
+             "如需每条规则只对特定项目生效，点“固化到项目配置”"
+             "写入项目的 .project_context/。"),
             ("怎样让规则永久生效？",
-             "① 打开“配置文件”Tab；\n"
-             "② 编辑 common.toml 或对应语言的 toml；\n"
-             "③ 保存后写回项目，下一次运行自动加载。"),
+             "两条路：\n"
+             "  • 在“③ 本次追加”卡片里点“固化到项目配置”\n"
+             "  • 或到「配置文件」Tab 手动编辑 common.toml"),
             ("Python 模式与 EXE 模式的内置规则一样吗？",
              "取决于分发包是否同步更新。\n"
-             "本对话框顶部“① 工具内置规则”显示的路径就是当前实际来源。\n"
-             "两个分发方式若版本一致，内置规则也一致。"),
+             "本对话框顶部“① 工具内置规则”显示的路径就是当前来源。"),
         ]
 
         for q, a in qa_list:
@@ -263,10 +316,6 @@ class ConfigHelpDialog(QDialog):
                 "font-size: 11px; padding: 2px; text-align: left; }"
             )
             toggle.setToolButtonStyle(Qt.ToolButtonTextOnly)
-            toggle.setSizePolicy(
-                toggle.sizePolicy().horizontalPolicy(),
-                toggle.sizePolicy().verticalPolicy(),
-            )
 
             ans = QLabel(a)
             ans.setStyleSheet(
@@ -278,8 +327,8 @@ class ConfigHelpDialog(QDialog):
 
             def _on(checked, label=ans, btn=toggle):
                 label.setVisible(checked)
-                prefix = "▾ " if checked else "▸ "
-                btn.setText(prefix + btn.text().split(" ", 1)[-1])
+                label_text = btn.text().split(" ", 1)[-1]
+                btn.setText(("▾ " if checked else "▸ ") + label_text)
 
             toggle.toggled.connect(_on)
             v.addWidget(toggle)
@@ -288,6 +337,36 @@ class ConfigHelpDialog(QDialog):
         return box
 
     # ------------------------------------------------------------------
+    # 槽
+    # ------------------------------------------------------------------
+
+    def _on_jump_to(self, target: str) -> None:
+        self._jump_target = target
+        self.accept()
+
+    def _on_solidify(self) -> None:
+        from project_context_gui.dialogs.solidify_rules_dialog import (
+            SolidifyRulesDialog,
+        )
+        from PySide6.QtWidgets import QMessageBox
+
+        if self._run_state is None or not self._project_root:
+            QMessageBox.information(
+                self, "固化", "没有可固化的规则或未选择项目。"
+            )
+            return
+
+        dlg = SolidifyRulesDialog(
+            self._run_state, self._project_root, self
+        )
+        if dlg.exec() == QDialog.Accepted:
+            written = dlg.written_path()
+            QMessageBox.information(
+                self, "固化完成",
+                f"已写入：\n{written}"
+            )
+            self._solidified = True
+            self.accept()
 
     def _on_copy(self) -> None:
         QApplication.clipboard().setText(self._to_text())
@@ -298,6 +377,8 @@ class ConfigHelpDialog(QDialog):
         for layer in self._result.all_layers():
             lines.append(f"{layer.marker} {layer.name}")
             lines.append(f"  {layer.description}")
+            if layer.edit_hint:
+                lines.append(f"  编辑入口：{layer.edit_hint}")
             for p in layer.paths:
                 lines.append(f"  路径：{p}")
             for f in layer.files:
@@ -308,13 +389,9 @@ class ConfigHelpDialog(QDialog):
 
         total = sum(l.rules_count for l in self._result.all_layers())
         lines.append(f"最终生效规则：约 {total} 条")
-        lines.append("")
-        lines.append("常见问题：")
-        lines.append("  见 GUI「查看配置加载说明」对话框")
         return "\n".join(lines)
 
     def _on_open_doc(self) -> None:
-        # 尝试打开项目根的 docs/gui.md；找不到则退回打开 README
         candidates = [
             Path(__file__).resolve().parents[2] / "docs" / "gui.md",
             Path(__file__).resolve().parents[2] / "README.md",

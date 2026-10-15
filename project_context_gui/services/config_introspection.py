@@ -14,14 +14,17 @@ except ImportError:
 @dataclass
 class LayerInfo:
     """一层配置的实况。"""
-    name: str                    # "内置" / "项目配置" / "本次追加"
+    name: str                    # "工具内置规则" / "项目配置" / "本次追加"
     marker: str                  # "①" / "②" / "③"
     description: str             # 一句话说明
-    paths: list[Path] = field(default_factory=list)
-    files: list[Path] = field(default_factory=list)
+    paths: list = field(default_factory=list)
+    files: list = field(default_factory=list)
     rules_count: int = 0
     available: bool = True
     note: str = ""
+    # 新增：指向"改这一层的工具"
+    edit_hint: str = ""
+    edit_target: str = ""        # "config_tab" | "run_tab_filter" | ""
 
 
 @dataclass
@@ -31,9 +34,17 @@ class IntrospectionResult:
     layer_project: LayerInfo
     layer_session: LayerInfo
 
-    def all_layers(self) -> list[LayerInfo]:
-        return [self.layer_builtin, self.layer_project, self.layer_session]
+    def all_layers(self) -> list:
+        return [
+            self.layer_builtin,
+            self.layer_project,
+            self.layer_session,
+        ]
 
+
+# ---------------------------------------------------------------------------
+# 定位内置配置目录
+# ---------------------------------------------------------------------------
 
 def locate_builtin_config_dir(
     mode: str = "python",
@@ -55,7 +66,6 @@ def locate_builtin_config_dir(
             if candidate.is_dir():
                 return candidate
 
-    # Python：从 project_context 包的位置推
     try:
         import project_context
         pkg_dir = Path(project_context.__file__).parent
@@ -68,6 +78,10 @@ def locate_builtin_config_dir(
     return None
 
 
+# ---------------------------------------------------------------------------
+# 三层实况
+# ---------------------------------------------------------------------------
+
 def inspect_builtin(
     mode: str = "python",
     exe_path: str = "",
@@ -76,7 +90,9 @@ def inspect_builtin(
     info = LayerInfo(
         name="工具内置规则",
         marker="①",
-        description="工具自带，随分发包提供，不可修改",
+        description="工具自带，随分发包提供",
+        edit_hint="工具自带，不可修改",
+        edit_target="",
     )
 
     cfg_dir = locate_builtin_config_dir(mode, exe_path, python_path)
@@ -97,11 +113,13 @@ def inspect_builtin(
     return info
 
 
-def inspect_project(root: str | Path | None) -> LayerInfo:
+def inspect_project(root) -> LayerInfo:
     info = LayerInfo(
         name="项目配置",
         marker="②",
-        description="项目根下的 .project_context/ 目录",
+        description="项目根下的 .project_context/ 目录，会随项目分发",
+        edit_hint="用「配置文件」Tab 编辑此层",
+        edit_target="config_tab",
     )
     if not root:
         info.available = False
@@ -117,7 +135,10 @@ def inspect_project(root: str | Path | None) -> LayerInfo:
     cfg_dir = root_path / ".project_context"
     if not cfg_dir.is_dir():
         info.available = False
-        info.note = "项目未提供 .project_context/，将只用内置规则"
+        info.note = (
+            "项目未提供 .project_context/，将只用内置规则。"
+            "可在「配置文件」Tab 点“新建 common.toml”创建。"
+        )
         return info
 
     info.paths = [cfg_dir]
@@ -141,7 +162,9 @@ def inspect_session(run_state) -> LayerInfo:
     info = LayerInfo(
         name="本次追加",
         marker="③",
-        description="在“运行配置”Tab 的过滤面板里输入，仅本次运行生效",
+        description="在「运行配置」Tab 的过滤面板里输入，仅本次运行生效",
+        edit_hint="用「运行配置」Tab 的过滤面板编辑此层",
+        edit_target="run_tab_filter",
     )
     if run_state is None:
         info.available = False
@@ -161,7 +184,7 @@ def inspect_session(run_state) -> LayerInfo:
 
 
 def introspect(
-    root: str | Path | None,
+    root=None,
     run_state=None,
     mode: str = "python",
     exe_path: str = "",
@@ -176,11 +199,10 @@ def introspect(
 
 
 # ---------------------------------------------------------------------------
-# 工具函数
+# 工具
 # ---------------------------------------------------------------------------
 
-def _count_rules(files: list[Path]) -> int:
-    """统计一组 TOML 里的排除规则条数。"""
+def _count_rules(files) -> int:
     total = 0
     for f in files:
         try:

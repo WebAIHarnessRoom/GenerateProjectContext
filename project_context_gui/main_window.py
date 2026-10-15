@@ -23,6 +23,7 @@ from PySide6.QtWidgets import (
     QStackedWidget,
     QStatusBar,
     QTabWidget,
+    QToolButton,
     QVBoxLayout,
     QWidget,
 )
@@ -239,6 +240,30 @@ class MainWindow(QMainWindow):
         self._tabs.addTab(self._run_tab, "运行配置")
         self._tabs.addTab(self._config_tab, "配置文件")
         self._tabs.addTab(self._log_tab, "运行日志")
+
+        # Tab 栏右上角：配置加载说明入口
+        corner = QWidget()
+        corner_lay = QHBoxLayout(corner)
+        corner_lay.setContentsMargins(0, 0, 8, 0)
+        corner_lay.setSpacing(0)
+
+        self._cfg_help_btn = QToolButton()
+        self._cfg_help_btn.setText("?")
+        self._cfg_help_btn.setFixedSize(22, 22)
+        self._cfg_help_btn.setCursor(Qt.PointingHandCursor)
+        self._cfg_help_btn.setStyleSheet(
+            "QToolButton {"
+            "  border: 1px solid #b8d8b8; border-radius: 11px;"
+            "  background: #eef6ee; color: #2d8f4e;"
+            "  font-weight: bold;"
+            "}"
+            "QToolButton:hover { background: #dcefdc; }"
+        )
+        self._cfg_help_btn.setToolTip("查看配置加载说明")
+        self._cfg_help_btn.clicked.connect(self._on_show_config_help)
+        corner_lay.addWidget(self._cfg_help_btn)
+
+        self._tabs.setCornerWidget(corner, Qt.TopRightCorner)
 
         self._tabs.currentChanged.connect(self._on_tab_changed)
         self._run_tab.stateChanged.connect(self._on_run_state_changed)
@@ -514,6 +539,23 @@ class MainWindow(QMainWindow):
         self._run_tab.set_resolver(self._resolver)
         self._update_mode_badge()
         self._apply_user_prefs()
+
+    def _on_show_config_help(self) -> None:
+        """由 Tab 栏角落按钮触发的配置加载说明。"""
+        # 委托给 RunTab，避免逻辑重复
+        self._run_tab._on_show_config_help()
+
+    def _on_config_help_jump(self, target: str) -> None:
+        """由配置加载说明对话框触发的 Tab 跳转。"""
+        if target == "config_tab":
+            self._tabs.setCurrentIndex(1)
+        elif target == "run_tab_filter":
+            self._tabs.setCurrentIndex(0)
+            # 展开过滤面板
+            try:
+                self._run_tab._filter_block._toggle.setChecked(True)
+            except Exception:
+                pass
 
     def _apply_user_prefs(self) -> None:
         apply_theme(self._settings.theme)
