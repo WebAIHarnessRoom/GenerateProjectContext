@@ -5,11 +5,13 @@ from pathlib import Path
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
+    QApplication,
     QButtonGroup,
     QCheckBox,
     QComboBox,
     QDialog,
     QDialogButtonBox,
+    QFileDialog,
     QFormLayout,
     QGridLayout,
     QGroupBox,
@@ -17,13 +19,14 @@ from PySide6.QtWidgets import (
     QLabel,
     QListWidget,
     QListWidgetItem,
+    QMessageBox,
     QPlainTextEdit,
     QPushButton,
     QRadioButton,
     QSpinBox,
+    QToolButton,
     QVBoxLayout,
     QWidget,
-    QApplication,
 )
 
 from project_context_gui.state import (
@@ -44,8 +47,6 @@ from project_context_gui.services.runner_resolver import (
     make_python_command,
 )
 
-from PySide6.QtWidgets import QFileDialog, QMessageBox
-
 _BUILTIN_LANGUAGES = [
     "python", "node", "go", "rust", "java",
     "cpp", "php", "ruby", "dotnet",
@@ -62,6 +63,7 @@ class RunTab(QWidget):
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._resolver = None
+        self._default_output_name = "PROJECT_CONTEXT.md"
         self._build_ui()
         self._connect()
         self._refresh_command_preview()
@@ -98,7 +100,9 @@ class RunTab(QWidget):
         inner.addWidget(self._build_content_group())
 
         # 区块四：过滤（折叠，默认收起）
-        self._filter_block = Collapsible("过滤降噪（高级）", expanded=False)
+        self._filter_block = Collapsible(
+            "追加排除规则（叠加在项目配置之上）", expanded=False
+        )
         self._build_filter_into(self._filter_block.content_layout())
         inner.addWidget(self._filter_block)
 
@@ -210,6 +214,37 @@ class RunTab(QWidget):
         return box
 
     def _build_filter_into(self, lay: QVBoxLayout) -> None:
+        # 顶部：说明文字 + 帮助按钮
+        head = QHBoxLayout()
+        desc = QLabel(
+            "这些规则会追加到「工具内置规则」与「项目配置」之上，"
+            "仅本次运行生效。想永久生效请编辑“配置文件”Tab。"
+        )
+        desc.setWordWrap(True)
+        desc.setStyleSheet("color:#666; font-size: 11px;")
+        head.addWidget(desc, 1)
+
+        help_btn = QToolButton()
+        help_btn.setText("?")
+        help_btn.setFixedSize(22, 22)
+        help_btn.setStyleSheet(
+            "QToolButton { border: 1px solid #b8d8b8; border-radius: 11px; "
+            "background: #eef6ee; color: #2d8f4e; font-weight: bold; }"
+            "QToolButton:hover { background: #dcefdc; }"
+        )
+        help_btn.setToolTip("查看配置加载说明")
+        help_btn.clicked.connect(self._on_show_config_help)
+        head.addWidget(help_btn)
+        lay.addLayout(head)
+
+        # 忽略项目配置
+        self._cb_no_inherit = QCheckBox(
+            "忽略项目配置（不继承 .project_context/）"
+        )
+        self._cb_no_inherit.toggled.connect(self._emit_changed)
+        lay.addWidget(self._cb_no_inherit)
+
+        # 四个列表编辑器
         self._ex_globs = ListEditor(
             "排除文件 glob",
             placeholder="例如 *.pb.go",
@@ -241,6 +276,19 @@ class RunTab(QWidget):
         lay.addWidget(self._ex_dir_globs)
         lay.addWidget(self._ex_suffixes)
 
+        # 底部按钮行
+        btn_row = QHBoxLayout()
+        preview_btn = QPushButton("预览最终生效规则")
+        preview_btn.clicked.connect(self._on_preview_effective_rules)
+        btn_row.addWidget(preview_btn)
+
+        help2_btn = QPushButton("查看配置加载说明")
+        help2_btn.clicked.connect(self._on_show_config_help)
+        btn_row.addWidget(help2_btn)
+
+        btn_row.addStretch(1)
+        lay.addLayout(btn_row)
+
     def _build_limits_into(self, lay: QVBoxLayout) -> None:
         form = QFormLayout()
         form.setLabelAlignment(Qt.AlignRight)
@@ -249,17 +297,17 @@ class RunTab(QWidget):
         self._max_size.setRange(1, 100_000)
         self._max_size.setValue(DEFAULT_MAX_FILE_SIZE_KB)
         self._max_size.setSuffix(" KB")
-        self._max_size.setFixedWidth(120)          # ← 缩短
+        self._max_size.setFixedWidth(120)
 
         self._max_commits = QSpinBox()
         self._max_commits.setRange(0, 100_000)
         self._max_commits.setValue(DEFAULT_MAX_GIT_COMMITS)
-        self._max_commits.setFixedWidth(120)       # ← 缩短
+        self._max_commits.setFixedWidth(120)
 
         self._max_files = QSpinBox()
         self._max_files.setRange(0, 10_000)
         self._max_files.setValue(DEFAULT_MAX_FILES_PER_COMMIT)
-        self._max_files.setFixedWidth(120)         # ← 缩短
+        self._max_files.setFixedWidth(120)
 
         form.addRow("单文件大小上限", self._max_size)
         form.addRow("最大 Git 提交数", self._max_commits)
@@ -316,7 +364,7 @@ class RunTab(QWidget):
 
     def _on_root_changed(self, path: str) -> None:
         if path and not self._output_picker.path():
-            name = "PROJECT_CONTEXT.md"
+            name = self._default_output_name or "PROJECT_CONTEXT.md"
             self._output_picker.set_path(str(Path(path) / name))
         self._check_output_exists()
         self._emit_changed()
@@ -368,7 +416,6 @@ class RunTab(QWidget):
             return
         self._emit_changed()
 
-
     def _normalize_exclude_dir(self, chosen: Path, root: str) -> str:
         """把选中的绝对路径转成适合放进排除列表的值。
 
@@ -388,6 +435,76 @@ class RunTab(QWidget):
         if len(parts) == 1:
             return parts[0]
         return str(rel).replace("\\", "/")
+
+    # -- 配置说明与最终规则预览 -------------------------------------------
+
+    def _on_show_config_help(self) -> None:
+        """打开配置加载说明对话框。"""
+        from project_context_gui.dialogs.config_help_dialog import (
+            ConfigHelpDialog,
+        )
+        from project_context_gui.services.config_introspection import (
+            introspect,
+        )
+
+        state = self.collect_state()
+
+        mode = "python"
+        exe_path = ""
+        python_path = ""
+        if self._resolver is not None:
+            try:
+                mode = self._resolver.current_mode()
+                s = getattr(self._resolver, "_settings", None)
+                if s is not None:
+                    exe_path = getattr(s, "exe_path", "") or ""
+                    python_path = (
+                        getattr(s, "python_executable", "") or ""
+                    )
+            except Exception:
+                pass
+
+        result = introspect(
+            root=state.root,
+            run_state=state,
+            mode=mode,
+            exe_path=exe_path,
+            python_path=python_path,
+        )
+        dlg = ConfigHelpDialog(result, self)
+        dlg.exec()
+
+    def _on_preview_effective_rules(self) -> None:
+        """打开最终生效规则对话框。"""
+        from project_context_gui.dialogs.effective_rules_dialog import (
+            EffectiveRulesDialog,
+        )
+
+        state = self.collect_state()
+        if not state.root:
+            QMessageBox.warning(
+                self, "无法预览", "请先选择项目。"
+            )
+            return
+
+        if self._resolver is None:
+            QMessageBox.warning(
+                self, "无法预览", "尚未初始化执行引擎。"
+            )
+            return
+
+        cli_args = build_cli_args(state)
+        cmd = self._resolver.resolve(cli_args)
+
+        dlg = EffectiveRulesDialog(
+            root=state.root,
+            cmd_program=cmd.program,
+            cmd_args=cli_args,
+            parent=self,
+        )
+        dlg.exec()
+
+    # -- 状态收集 ---------------------------------------------------------
 
     def _custom_languages(self) -> list[str]:
         return [
@@ -443,6 +560,10 @@ class RunTab(QWidget):
             max_file_size_kb=self._max_size.value(),
             max_git_commits=self._max_commits.value(),
             max_files_per_commit=self._max_files.value(),
+            no_inherit_defaults=(
+                self._cb_no_inherit.isChecked()
+                if hasattr(self, "_cb_no_inherit") else False
+            ),
         )
 
     def set_root(self, path: str) -> None:
@@ -466,7 +587,7 @@ class RunTab(QWidget):
             if w is self._cmd_view:
                 continue
             # 仅禁用输入类控件；按钮/标签无需处理
-            if isinstance(w, (QPushButton,)):
+            if isinstance(w, (QPushButton, QToolButton)):
                 continue
             w.setEnabled(not running)
         # 命令预览始终可复制

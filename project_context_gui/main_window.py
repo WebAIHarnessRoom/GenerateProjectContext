@@ -367,16 +367,50 @@ class MainWindow(QMainWindow):
 
         scan = scan_project(path)
         self._log_tab.append(f"已加载项目：{path}")
+        self._log_tab.append("配置加载顺序：内置 → 项目 → 本次追加")
+
+        # ① 内置
+        try:
+            from project_context_gui.services.config_introspection import (
+                locate_builtin_config_dir,
+            )
+            mode = self._resolver.current_mode()
+            exe_path = self._settings.exe_path or ""
+            builtin_dir = locate_builtin_config_dir(
+                mode=mode, exe_path=exe_path,
+            )
+            self._log_tab.append(
+                f"① 内置规则：{builtin_dir or '未找到'}"
+            )
+        except Exception:
+            self._log_tab.append("① 内置规则：未找到")
+
+        # ② 项目
         if scan.has_project_context_dir:
             self._log_tab.append(
-                f"发现 .project_context/（common.toml="
-                f"{'有' if scan.has_common_toml else '无'}，"
-                f"语言配置 {scan.language_toml_count} 个）"
+                f"② 项目配置：发现 .project_context/，"
+                f"共 {len(scan.config_files)} 个文件"
+                + (f"（{', '.join(scan.config_files)}）"
+                   if scan.config_files else "")
             )
         else:
             self._log_tab.append(
-                "未发现 .project_context/，将使用内置默认配置。"
+                "② 项目配置：未发现 .project_context/，将只用内置规则"
             )
+
+        # ③ 本次追加
+        run_state = self._run_tab.collect_state()
+        session_count = (
+            len(run_state.exclude_globs)
+            + len(run_state.exclude_dirs)
+            + len(run_state.exclude_dir_globs)
+            + len(run_state.exclude_suffixes)
+        )
+        self._log_tab.append(f"③ 本次追加：{session_count} 条")
+        self._log_tab.append(
+            "提示：点“运行配置”Tab 的“查看配置加载说明”可了解详情。"
+        )
+
         if scan.detected_languages:
             self._log_tab.append(
                 f"语言信号：{', '.join(scan.detected_languages)}"

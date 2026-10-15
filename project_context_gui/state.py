@@ -44,6 +44,8 @@ class RunState:
     max_file_size_kb: int = DEFAULT_MAX_FILE_SIZE_KB
     max_git_commits: int = DEFAULT_MAX_GIT_COMMITS
     max_files_per_commit: int = DEFAULT_MAX_FILES_PER_COMMIT
+    # 配置继承控制
+    no_inherit_defaults: bool = False
 
 
 def build_cli_args(state: RunState) -> list[str]:
@@ -55,6 +57,9 @@ def build_cli_args(state: RunState) -> list[str]:
 
     if state.quiet:
         args.append("--quiet")
+        
+    if state.no_inherit_defaults:
+        args.append("--no-inherit-defaults")
 
     # 语言
     if state.languages_mode == "all":
@@ -93,7 +98,6 @@ def build_cli_args(state: RunState) -> list[str]:
         args.append("--no-ast")
     if state.no_timestamp:
         args.append("--no-timestamp")
-
     return args
 
 def format_command(program: str, args: list[str]) -> str:

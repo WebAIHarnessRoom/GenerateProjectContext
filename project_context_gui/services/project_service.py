@@ -42,6 +42,7 @@ class ProjectScan:
     has_git: bool = False
     suffix_hits: dict[str, int] = field(default_factory=dict)
     marker_hits: dict[str, list[str]] = field(default_factory=list)
+    config_files: list[str] = field(default_factory=list)
 
     @property
     def detected_languages(self) -> list[str]:
@@ -62,9 +63,14 @@ def scan_project(root: str | Path) -> ProjectScan:
         scan.has_project_context_dir = True
         if (cfg_dir / "common.toml").is_file():
             scan.has_common_toml = True
+            scan.config_files.append("common.toml")
         lang_dir = cfg_dir / "languages"
         if lang_dir.is_dir():
-            scan.language_toml_count = len(list(lang_dir.glob("*.toml")))
+            for f in sorted(lang_dir.glob("*.toml")):
+                scan.config_files.append(f"languages/{f.name}")
+            scan.language_toml_count = len(list(
+                lang_dir.glob("*.toml")
+            ))
 
     scan.has_git = (root / ".git").exists()
 

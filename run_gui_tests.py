@@ -2322,6 +2322,141 @@ else:
     skip("I-RES-10 引擎模式切换联动启用状态", "PySide6 未安装")
 
 # ===========================================================================
+# 集成测试：配置来源与加载说明
+# ===========================================================================
+
+if has_qt():
+    @test("U-CFG-01 RunState 新增 no_inherit_defaults 字段")
+    def _():
+        mod = import_state()
+        s = mod["RunState"](root="/p")
+        A.false(s.no_inherit_defaults)
+        s2 = mod["RunState"](root="/p", no_inherit_defaults=True)
+        A.true(s2.no_inherit_defaults)
+else:
+    skip("U-CFG-01 RunState 新增 no_inherit_defaults 字段",
+         "PySide6 未安装")
+
+
+if has_qt():
+    @test("U-CFG-02 --no-inherit-defaults 进入参数")
+    def _():
+        mod = import_state()
+        s = mod["RunState"](root="/p", no_inherit_defaults=True)
+        A.in_("--no-inherit-defaults", mod["build_cli_args"](s))
+        s2 = mod["RunState"](root="/p")
+        A.not_in("--no-inherit-defaults", mod["build_cli_args"](s2))
+else:
+    skip("U-CFG-02 --no-inherit-defaults 进入参数",
+         "PySide6 未安装")
+
+
+if has_qt():
+    @test("U-CFG-03 introspect 三层结构可用")
+    def _():
+        from project_context_gui.services.config_introspection import (
+            introspect,
+        )
+        tmp = Path(tempfile.mkdtemp(prefix="pcgui_cfg_"))
+        try:
+            cfg = tmp / ".project_context"
+            cfg.mkdir()
+            (cfg / "common.toml").write_text(
+                'inherit_defaults = true\n[filter]\n'
+                'ignore_dirs = ["a", "b"]\n'
+            )
+            result = introspect(root=str(tmp), run_state=None)
+            A.true(result.layer_builtin is not None)
+            A.true(result.layer_project is not None)
+            A.true(result.layer_session is not None)
+            A.eq(result.layer_project.rules_count, 2)
+            A.true(result.layer_project.available)
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+else:
+    skip("U-CFG-03 introspect 三层结构可用", "PySide6 未安装")
+
+
+if has_qt():
+    @test("U-CFG-04 introspect 项目无 .project_context/")
+    def _():
+        from project_context_gui.services.config_introspection import (
+            introspect,
+        )
+        tmp = Path(tempfile.mkdtemp(prefix="pcgui_cfg_"))
+        try:
+            result = introspect(root=str(tmp), run_state=None)
+            A.false(result.layer_project.available)
+            A.in_(".project_context", result.layer_project.note)
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+else:
+    skip("U-CFG-04 introspect 项目无 .project_context/", "PySide6 未安装")
+
+
+if has_qt():
+    @test("I-CFG-05 RunTab 勾选“忽略项目配置”进入命令预览")
+    def _():
+        _ensure_qt_app()
+        from project_context_gui.tabs.run_tab import RunTab
+        tab = RunTab()
+        try:
+            tab.set_root("/p")
+            tab._cb_no_inherit.setChecked(True)
+            A.in_("--no-inherit-defaults",
+                  tab._cmd_view.toPlainText())
+        finally:
+            tab.deleteLater()
+else:
+    skip("I-CFG-05 RunTab 勾选“忽略项目配置”进入命令预览",
+         "PySide6 未安装")
+
+
+if has_qt():
+    @test("I-CFG-06 ConfigHelpDialog 可打开不崩")
+    def _():
+        _ensure_qt_app()
+        from project_context_gui.dialogs.config_help_dialog import (
+            ConfigHelpDialog,
+        )
+        from project_context_gui.services.config_introspection import (
+            introspect,
+        )
+        tmp = Path(tempfile.mkdtemp(prefix="pcgui_cfg_"))
+        try:
+            result = introspect(root=str(tmp))
+            dlg = ConfigHelpDialog(result)
+            try:
+                A.true(dlg is not None)
+                text = dlg._to_text()
+                A.in_("配置加载说明", text)
+            finally:
+                dlg.deleteLater()
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+else:
+    skip("I-CFG-06 ConfigHelpDialog 可打开不崩", "PySide6 未安装")
+
+
+if has_qt():
+    @test("I-CFG-07 RunTab 有“查看配置加载说明”按钮")
+    def _():
+        _ensure_qt_app()
+        from project_context_gui.tabs.run_tab import RunTab
+        from PySide6.QtWidgets import QPushButton
+        tab = RunTab()
+        try:
+            btns = tab.findChildren(QPushButton)
+            texts = [b.text() for b in btns]
+            A.true(any("配置加载说明" in t for t in texts))
+            A.true(any("预览最终生效规则" in t for t in texts))
+        finally:
+            tab.deleteLater()
+else:
+    skip("I-CFG-07 RunTab 有“查看配置加载说明”按钮",
+         "PySide6 未安装")
+
+# ===========================================================================
 # 运行器
 # ===========================================================================
 
