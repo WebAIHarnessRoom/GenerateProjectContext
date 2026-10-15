@@ -37,6 +37,51 @@ pip install -e .
 
 ---
 
+## 图形界面（GUI）
+
+除命令行外，本项目提供图形界面，用鼠标完成"选目录 → 点运行 → 打开输出文件夹"。
+
+### 安装
+
+```bash
+pip install -e .[gui]
+``` {data-source-line="397"}
+
+### 启动
+
+```bash
+# 方式一：模块入口 {#方式一模块入口-1  data-source-line="402"}
+python -m project_context_gui
+
+# 方式二：脚本入口 {#方式二脚本入口  data-source-line="405"}
+project-context-gui
+``` {data-source-line="407"}
+
+### 功能
+
+- 选项目文件夹、输出文件（全部用鼠标点选，不用手输路径）
+- 语言模式（自动检测 / 全部 / 手动选择）
+- 章节开关（源码 / AST / Git / 时间戳）
+- 过滤降噪（排除 glob / 目录 / 后缀，高级折叠）
+- 实时命令预览，所见即所跑
+- 查看与编辑 `.project_context/` 下的 TOML（行号、高亮、校验、格式化）
+- 运行日志按级别过滤、搜索、导出
+- 主题（跟随系统 / 浅色 / 深色）
+- 最近项目、拖拽打开、快捷键
+- 成功后一键打开输出文件夹
+
+### 与 CLI 的一致性
+
+GUI 通过 `python -m project_context` 子进程执行原 CLI，参数拼装与手工输入**完全一致**。
+关闭时间戳后，GUI 输出与手工 CLI 输出**字节级一致**（`run_gui_tests.py` 中有专项测试）。
+
+### 完整文档
+
+见 [`docs/gui.md`](docs/gui.md)。
+
+
+---
+
 ## 快速开始
 
 ### 方式一：命令行
