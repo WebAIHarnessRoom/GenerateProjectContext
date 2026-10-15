@@ -31,6 +31,7 @@ from project_context_gui.dialogs.settings_dialog import SettingsDialog
 from project_context_gui.services.cli_runner import CliRunner
 from project_context_gui.services.opener import open_folder
 from project_context_gui.services.project_service import scan_project
+from project_context_gui.services.runner_resolver import RunnerResolver
 from project_context_gui.services.settings_service import SettingsService
 from project_context_gui.state import RunState, build_cli_args
 from project_context_gui.tabs.config_tab import ConfigTab
@@ -171,6 +172,7 @@ class MainWindow(QMainWindow):
 
         self._settings = SettingsService()
         self._runner = CliRunner(self)
+        self._resolver = RunnerResolver(self._settings)
         self._state = AppState.EMPTY
         self._started_at: float = 0.0
         self._tick_timer = QTimer(self)
@@ -188,6 +190,7 @@ class MainWindow(QMainWindow):
 
         self._set_state(AppState.EMPTY)
         self._refresh_recent()
+        self._update_mode_badge()
 
         # 恢复上次项目（可选）
         QTimer.singleShot(0, self._maybe_restore_last_project)
@@ -240,6 +243,9 @@ class MainWindow(QMainWindow):
         self._tabs.currentChanged.connect(self._on_tab_changed)
         self._run_tab.stateChanged.connect(self._on_run_state_changed)
 
+        # 注入 resolver（命令预览将反映实际执行方式）
+        self._run_tab.set_resolver(self._resolver)
+
         tabs_page = QWidget()
         tpv = QVBoxLayout(tabs_page)
         tpv.setContentsMargins(0, 0, 0, 0)
@@ -277,6 +283,23 @@ class MainWindow(QMainWindow):
         self._path_label = QLabel("（未选择项目）")
         self._path_label.setStyleSheet("color: #555;")
         top_lay.addWidget(self._path_label, 1)
+
+        # 执行引擎徽章（可点击 → 打开设置）
+        self._mode_badge = QPushButton("⚙ 自动")
+        self._mode_badge.setObjectName("modeBadge")
+        self._mode_badge.setFlat(True)
+        self._mode_badge.setCursor(Qt.PointingHandCursor)
+        self._mode_badge.setStyleSheet(
+            "QPushButton#modeBadge {"
+            "  background: #eef6ee; border: 1px solid #b8d8b8;"
+            "  border-radius: 10px; padding: 2px 10px;"
+            "  color: #2d8f4e; font-size: 11px;"
+            "}"
+            "QPushButton#modeBadge:hover { background: #dcefdc; }"
+        )
+        self._mode_badge.setToolTip("点击切换执行引擎")
+        self._mode_badge.clicked.connect(self._on_open_settings)
+        top_lay.addWidget(self._mode_badge)
 
         self._rescan_btn = QPushButton("重新检测")
         self._rescan_btn.clicked.connect(self._on_rescan)
@@ -445,15 +468,33 @@ class MainWindow(QMainWindow):
         if dlg.exec() != QDialog.Accepted:
             return
         self._settings.default_output_name = dlg.default_output_name()
+        self._settings.runner_mode = dlg.runner_mode()
+        self._settings.exe_path = dlg.exe_path()
         self._settings.python_executable = dlg.python_executable()
         self._settings.theme = dlg.theme()
         self._settings.font_size = dlg.font_size()
         self._settings.restore_last_project = dlg.restore_last_project()
+
+        # 重建 resolver，刷新 RunTab 预览与徽章
+        self._resolver = RunnerResolver(self._settings)
+        self._run_tab.set_resolver(self._resolver)
+        self._update_mode_badge()
         self._apply_user_prefs()
 
     def _apply_user_prefs(self) -> None:
         apply_theme(self._settings.theme)
         apply_font_size(self._settings.font_size)
+
+    def _update_mode_badge(self) -> None:
+        """根据 resolver 当前实际模式刷新徽章文案。"""
+        try:
+            mode = self._resolver.current_mode()
+        except Exception:
+            mode = "python"
+        if mode == "exe":
+            self._mode_badge.setText("📦 EXE")
+        else:
+            self._mode_badge.setText("🐍 Python")
 
     # ------------------------------------------------------------------
     # 运行/停止
@@ -487,11 +528,25 @@ class MainWindow(QMainWindow):
             if ret != QMessageBox.Yes:
                 return
 
-        args = build_cli_args(state)
-        program = self._resolve_python()
-        self._log_tab.append(
-            f"执行：{program} -m project_context " + " ".join(args)
-        )
+        cli_args = build_cli_args(state)
+        cmd = self._resolver.resolve(cli_args)
+
+        # EXE 模式且路径不存在：明确警告，不启动
+        if cmd.is_exe and not Path(cmd.program).is_file():
+            ret = QMessageBox.warning(
+                self, "无法运行",
+                f"未找到 generate-project-context.exe：\n{cmd.program}\n\n"
+                "请在设置中指定路径，或切换到 Python 模式。\n"
+                "是否打开设置？",
+                QMessageBox.Open | QMessageBox.Cancel,
+                QMessageBox.Open,
+            )
+            if ret == QMessageBox.Open:
+                self._on_open_settings()
+            return
+
+        self._log_tab.append(f"执行方式：{cmd.mode}")
+        self._log_tab.append(f"命令：{cmd.display}")
 
         self._started_at = _now()
         self._tick_timer.start()
@@ -499,15 +554,7 @@ class MainWindow(QMainWindow):
         self._progress.setVisible(True)
         self._tabs.setCurrentWidget(self._log_tab)
 
-        self._runner.run(
-            program, ["-m", "project_context", *args], cwd=state.root
-        )
-
-    def _resolve_python(self) -> str:
-        custom = self._settings.python_executable
-        if custom and Path(custom).exists():
-            return custom
-        return sys.executable
+        self._runner.run(cmd.program, cmd.args, cwd=state.root)
 
     def _request_cancel(self, confirm: bool = True) -> None:
         if confirm:
@@ -570,6 +617,14 @@ class MainWindow(QMainWindow):
         self._progress.setVisible(False)
         self._set_state(AppState.FAILED)
         self._log_tab.append(f"[stderr] {msg}")
+        # EXE 模式额外提示切换方式
+        try:
+            if self._resolver.current_mode() == "exe":
+                self._log_tab.append(
+                    "提示：可在设置中切换执行引擎，或指定其他 EXE 路径。"
+                )
+        except Exception:
+            pass
         QMessageBox.critical(self, "启动失败", msg)
 
     def _on_runner_cancelled(self) -> None:

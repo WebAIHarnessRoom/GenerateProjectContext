@@ -2027,6 +2027,301 @@ else:
     skip("I-MW-35 设置应用后主题/字体写入", "PySide6 未安装")
 
 # ===========================================================================
+# 集成测试：RunnerResolver
+# ===========================================================================
+
+class _FakeSettings:
+    """测试用：不落盘的极简设置。"""
+    def __init__(self, mode="auto", exe_path="", python=""):
+        self.runner_mode = mode
+        self.exe_path = exe_path
+        self.python_executable = python
+
+
+if has_qt():
+    @test("U-CMD-01 Python 模式拼装")
+    def _():
+        from project_context_gui.services.runner_resolver import (
+            make_python_command,
+        )
+        cmd = make_python_command(["/p", "-o", "/p/a.md"],
+                                  python_path="python")
+        A.eq(cmd.mode, "python")
+        A.eq(cmd.program, "python")
+        A.eq(cmd.args, ["-m", "project_context", "/p", "-o", "/p/a.md"])
+        A.in_("-m project_context", cmd.display)
+        A.false(cmd.is_exe)
+else:
+    skip("U-CMD-01 Python 模式拼装", "PySide6 未安装")
+
+
+if has_qt():
+    @test("U-CMD-02 EXE 模式拼装")
+    def _():
+        from project_context_gui.services.runner_resolver import (
+            make_exe_command,
+        )
+        cmd = make_exe_command(["/p", "-o", "/p/a.md"], "C:/gpc/g.exe")
+        A.eq(cmd.mode, "exe")
+        A.eq(cmd.args, ["/p", "-o", "/p/a.md"])
+        A.true(cmd.is_exe)
+        A.in_("g.exe", cmd.display)
+else:
+    skip("U-CMD-02 EXE 模式拼装", "PySide6 未安装")
+
+
+if has_qt():
+    @test("U-CMD-03 EXE 路径含空格加引号")
+    def _():
+        from project_context_gui.services.runner_resolver import (
+            make_exe_command,
+        )
+        cmd = make_exe_command(["/p"], "C:/Program Files/gpc/g.exe")
+        A.in_('"C:/Program Files/gpc/g.exe"', cmd.display)
+else:
+    skip("U-CMD-03 EXE 路径含空格加引号", "PySide6 未安装")
+
+
+if has_qt():
+    @test("U-CMD-04 空参数无尾随空格")
+    def _():
+        from project_context_gui.services.runner_resolver import (
+            make_exe_command,
+        )
+        cmd = make_exe_command([], "g.exe")
+        A.eq(cmd.display, "g.exe")
+else:
+    skip("U-CMD-04 空参数无尾随空格", "PySide6 未安装")
+
+
+if has_qt():
+    @test("I-RES-01 resolver auto + 无 exe → python")
+    def _():
+        from project_context_gui.services.runner_resolver import (
+            RunnerResolver,
+        )
+        s = _FakeSettings(mode="auto")
+        r = RunnerResolver(s)
+        import shutil
+        if shutil.which("generate-project-context.exe"):
+            cmd = r.resolve(["/p"])
+            A.eq(cmd.mode, "exe")
+        else:
+            cmd = r.resolve(["/p"])
+            A.eq(cmd.mode, "python")
+            A.in_("-m", cmd.args)                # 修
+            A.in_("project_context", cmd.args)   # 修
+            A.eq(cmd.args[:2], ["-m", "project_context"])  # 加固
+else:
+    skip("I-RES-01 resolver auto + 无 exe → python", "PySide6 未安装")
+
+
+if has_qt():
+    @test("I-RES-02 resolver python 模式")
+    def _():
+        from project_context_gui.services.runner_resolver import (
+            RunnerResolver,
+        )
+        s = _FakeSettings(mode="python", python="python")
+        r = RunnerResolver(s)
+        cmd = r.resolve(["/p"])
+        A.eq(cmd.mode, "python")
+        A.eq(cmd.program, "python")
+else:
+    skip("I-RES-02 resolver python 模式", "PySide6 未安装")
+
+
+if has_qt():
+    @test("I-RES-03 resolver exe 模式路径不存在 → python 兜底")
+    def _():
+        from project_context_gui.services.runner_resolver import (
+            RunnerResolver,
+        )
+        s = _FakeSettings(
+            mode="exe", exe_path="/definitely/not/exist/g.exe",
+            python="python",
+        )
+        r = RunnerResolver(s)
+        # 找不到时 Path 不存在 → 回退 python
+        cmd = r.resolve(["/p"])
+        # 若 PATH 里恰好有 generate-project-context.exe，会出现 exe
+        import shutil
+        if shutil.which("generate-project-context.exe"):
+            A.eq(cmd.mode, "exe")
+        else:
+            A.eq(cmd.mode, "python")
+else:
+    skip("I-RES-03 resolver exe 模式路径不存在 → python 兜底",
+         "PySide6 未安装")
+
+
+if has_qt():
+    @test("I-RES-04 current_mode 反映实际模式")
+    def _():
+        from project_context_gui.services.runner_resolver import (
+            RunnerResolver,
+        )
+        s = _FakeSettings(mode="python")
+        r = RunnerResolver(s)
+        A.eq(r.current_mode(), "python")
+        s.runner_mode = "auto"
+        # 取决于本机是否有 exe；两种情况都应合法
+        A.in_(r.current_mode(), ["python", "exe"])
+else:
+    skip("I-RES-04 current_mode 反映实际模式", "PySide6 未安装")
+
+
+if has_qt():
+    @test("I-RES-05 describe 状态行")
+    def _():
+        from project_context_gui.services.runner_resolver import (
+            RunnerResolver,
+        )
+        s = _FakeSettings(mode="python", python="python")
+        r = RunnerResolver(s)
+        ok, msg = r.describe_python_status()
+        A.true(isinstance(ok, bool))
+        A.true(isinstance(msg, str))
+        A.true(len(msg) > 0)
+
+        ok2, msg2 = r.describe_exe_status()
+        A.true(isinstance(ok2, bool))
+        A.true(isinstance(msg2, str))
+else:
+    skip("I-RES-05 describe 状态行", "PySide6 未安装")
+
+
+if has_qt():
+    @test("I-RES-06 RunTab 注入 resolver 后命令预览变 exe 前缀")
+    def _():
+        _ensure_qt_app()
+        from project_context_gui.tabs.run_tab import RunTab
+        from project_context_gui.services.runner_resolver import (
+            RunnerResolver,
+        )
+
+        # 造一个假的 exe（用系统 python 冒充）
+        fake_exe = Path(tempfile.mkdtemp(prefix="pcgui_fakeexe_")) / "g.exe"
+        try:
+            fake_exe.write_text("")  # 不真跑，只要 is_file 成立
+
+            class _S:
+                runner_mode = "exe"
+                exe_path = str(fake_exe)
+                python_executable = "python"
+
+            tab = RunTab()
+            try:
+                tab.set_resolver(RunnerResolver(_S()))
+                tab.set_root("/p")
+                text = tab._cmd_view.toPlainText()
+                A.in_(str(fake_exe), text)
+                A.not_in("-m project_context", text)
+            finally:
+                tab.deleteLater()
+        finally:
+            shutil.rmtree(fake_exe.parent, ignore_errors=True)
+else:
+    skip("I-RES-06 RunTab 注入 resolver 后命令预览变 exe 前缀",
+         "PySide6 未安装")
+
+
+if has_qt():
+    @test("I-RES-07 未注入 resolver 时保持旧预览")
+    def _():
+        _ensure_qt_app()
+        from project_context_gui.tabs.run_tab import RunTab
+        tab = RunTab()
+        try:
+            tab.set_root("/p")
+            text = tab._cmd_view.toPlainText()
+            A.in_("python -m project_context", text)
+        finally:
+            tab.deleteLater()
+else:
+    skip("I-RES-07 未注入 resolver 时保持旧预览", "PySide6 未安装")
+
+
+if has_qt():
+    @test("I-RES-08 MainWindow 有模式徽章")
+    def _():
+        _ensure_qt_app()
+        from project_context_gui.main_window import MainWindow
+        import project_context_gui.services.settings_service as ss
+        ss._ORG = "pcgui_res_org"
+        ss._APP = "pcgui_res_app"
+
+        w = MainWindow()
+        try:
+            A.true(w._mode_badge is not None)
+            text = w._mode_badge.text()
+            A.true("EXE" in text or "Python" in text)
+        finally:
+            w.deleteLater()
+else:
+    skip("I-RES-08 MainWindow 有模式徽章", "PySide6 未安装")
+
+
+if has_qt():
+    @test("I-RES-09 设置 dialog 有引擎分组")
+    def _():
+        _ensure_qt_app()
+        from project_context_gui.dialogs.settings_dialog import (
+            SettingsDialog,
+        )
+        from project_context_gui.services.settings_service import (
+            SettingsService,
+        )
+        import project_context_gui.services.settings_service as ss
+        ss._ORG = "pcgui_res_org"
+        ss._APP = "pcgui_res_app"
+
+        dlg = SettingsDialog(SettingsService())
+        try:
+            A.true(dlg._mode_auto is not None)
+            A.true(dlg._mode_python is not None)
+            A.true(dlg._mode_exe is not None)
+            A.true(dlg._exe_edit is not None)
+            A.in_(dlg.runner_mode(), ["auto", "python", "exe"])
+        finally:
+            dlg.deleteLater()
+else:
+    skip("I-RES-09 设置 dialog 有引擎分组", "PySide6 未安装")
+
+
+if has_qt():
+    @test("I-RES-10 引擎模式切换联动启用状态")
+    def _():
+        _ensure_qt_app()
+        from project_context_gui.dialogs.settings_dialog import (
+            SettingsDialog,
+        )
+        from project_context_gui.services.settings_service import (
+            SettingsService,
+        )
+        import project_context_gui.services.settings_service as ss
+        ss._ORG = "pcgui_res_org"
+        ss._APP = "pcgui_res_app"
+
+        dlg = SettingsDialog(SettingsService())
+        try:
+            dlg._mode_auto.setChecked(True)
+            A.false(dlg._exe_edit.isEnabled())
+            A.false(dlg._python_edit.isEnabled())
+
+            dlg._mode_python.setChecked(True)
+            A.false(dlg._exe_edit.isEnabled())
+            A.true(dlg._python_edit.isEnabled())
+
+            dlg._mode_exe.setChecked(True)
+            A.true(dlg._exe_edit.isEnabled())
+            A.false(dlg._python_edit.isEnabled())
+        finally:
+            dlg.deleteLater()
+else:
+    skip("I-RES-10 引擎模式切换联动启用状态", "PySide6 未安装")
+
+# ===========================================================================
 # 运行器
 # ===========================================================================
 

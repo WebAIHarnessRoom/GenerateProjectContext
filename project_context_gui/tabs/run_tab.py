@@ -39,6 +39,10 @@ from project_context_gui.widgets.collapsible import Collapsible
 from project_context_gui.widgets.file_picker import FilePicker
 from project_context_gui.widgets.folder_picker import FolderPicker
 from project_context_gui.widgets.list_editor import ListEditor
+from project_context_gui.services.runner_resolver import (
+    ResolvedCommand,
+    make_python_command,
+)
 
 from PySide6.QtWidgets import QFileDialog, QMessageBox
 
@@ -57,6 +61,7 @@ class RunTab(QWidget):
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
+        self._resolver = None
         self._build_ui()
         self._connect()
         self._refresh_command_preview()
@@ -399,6 +404,13 @@ class RunTab(QWidget):
 
     def _refresh_command_preview(self) -> None:
         state = self.collect_state()
+        if self._resolver is not None:
+            cli_args = build_cli_args(state)
+            cmd = self._resolver.resolve(cli_args)
+            self._cmd_view.setPlainText(cmd.display)
+            return
+
+        # 未注入 resolver 时保持旧行为（兼容既有测试）
         program = "python -m project_context"
         args = build_cli_args(state)
         self._cmd_view.setPlainText(format_command(program, args))
@@ -438,6 +450,11 @@ class RunTab(QWidget):
         # 强制重新推导输出
         self._output_picker.set_path("")
         self._on_root_changed(path)
+
+    def set_resolver(self, resolver) -> None:
+        """由 MainWindow 注入 RunnerResolver。"""
+        self._resolver = resolver
+        self._refresh_command_preview()
 
     def apply_settings(self, default_output_name: str) -> None:
         """由主窗口把用户偏好注入。"""

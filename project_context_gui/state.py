@@ -104,3 +104,39 @@ def format_command(program: str, args: list[str]) -> str:
         if a          # ← 跳过空参数（例如未选择项目时的 root）
     ]
     return " ".join(parts)
+
+# ---------------------------------------------------------------------------
+# 完整命令拼装（供执行与预览共用）
+# ---------------------------------------------------------------------------
+
+def build_command(
+    state: RunState,
+    mode: str = "python",
+    *,
+    python_path: str | None = None,
+    exe_path: str | None = None,
+):
+    """根据 mode 拼出完整命令。
+
+    参数：
+        state       : RunState
+        mode        : "python" | "exe"
+        python_path : Python 模式解释器；None 用 sys.executable
+        exe_path    : EXE 模式可执行文件路径
+
+    返回：ResolvedCommand（定义在 services/runner_resolver.py）
+    """
+    # 延迟导入，避免循环依赖
+    from project_context_gui.services.runner_resolver import (
+        make_python_command,
+        make_exe_command,
+    )
+
+    cli_args = build_cli_args(state)
+
+    if mode == "exe":
+        if not exe_path:
+            raise ValueError("exe 模式必须提供 exe_path")
+        return make_exe_command(cli_args, exe_path)
+
+    return make_python_command(cli_args, python_path=python_path)

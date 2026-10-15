@@ -103,3 +103,22 @@ class SettingsService:
     @window_state.setter
     def window_state(self, v) -> None:
         self._s.setValue("ui/window_state", v)
+
+    # ---- 执行引擎 ------------------------------------------------------
+
+    @property
+    def runner_mode(self) -> str:
+        """auto / python / exe"""
+        return self._s.value("runtime/mode", "auto", type=str)
+
+    @runner_mode.setter
+    def runner_mode(self, v: str) -> None:
+        self._s.setValue("runtime/mode", v)
+
+    @property
+    def exe_path(self) -> str:
+        return self._s.value("runtime/exe_path", "", type=str)
+
+    @exe_path.setter
+    def exe_path(self, v: str) -> None:
+        self._s.setValue("runtime/exe_path", v)

@@ -69,6 +69,7 @@ project-context-gui
 - 主题（跟随系统 / 浅色 / 深色）
 - 最近项目、拖拽打开、快捷键
 - 成功后一键打开输出文件夹
+- 支持通过独立打包的 `generate-project-context.exe` 执行（自动/Python/EXE 三种模式）
 
 ### 与 CLI 的一致性
 
