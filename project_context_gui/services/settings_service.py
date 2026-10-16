@@ -25,7 +25,24 @@ class SettingsService:
     def default_output_name(self, v: str) -> None:
         self._s.setValue("output/name", v)
 
-    # ---- 运行时 ----
+    # ---- 执行引擎 ----
+
+    @property
+    def runner_mode(self) -> str:
+        """auto / python / exe"""
+        return self._s.value("runtime/mode", "auto", type=str)
+
+    @runner_mode.setter
+    def runner_mode(self, v: str) -> None:
+        self._s.setValue("runtime/mode", v)
+
+    @property
+    def exe_path(self) -> str:
+        return self._s.value("runtime/exe_path", "", type=str)
+
+    @exe_path.setter
+    def exe_path(self, v: str) -> None:
+        self._s.setValue("runtime/exe_path", v)
 
     @property
     def python_executable(self) -> str:
@@ -34,6 +51,15 @@ class SettingsService:
     @python_executable.setter
     def python_executable(self, v: str) -> None:
         self._s.setValue("runtime/python", v)
+
+    @property
+    def python_module_path(self) -> str:
+        """project_context 的父目录。留空表示自动探测程序目录。"""
+        return self._s.value("runtime/python_module_path", "", type=str)
+
+    @python_module_path.setter
+    def python_module_path(self, v: str) -> None:
+        self._s.setValue("runtime/python_module_path", v)
 
     # ---- 外观 ----
 
@@ -74,7 +100,7 @@ class SettingsService:
     # ---- 最近项目 ----
 
     @property
-    def recent_projects(self) -> list[str]:
+    def recent_projects(self) -> list:
         v = self._s.value("recent/projects", [], type=list)
         return [str(x) for x in v] if v else []
 
@@ -103,22 +129,3 @@ class SettingsService:
     @window_state.setter
     def window_state(self, v) -> None:
         self._s.setValue("ui/window_state", v)
-
-    # ---- 执行引擎 ------------------------------------------------------
-
-    @property
-    def runner_mode(self) -> str:
-        """auto / python / exe"""
-        return self._s.value("runtime/mode", "auto", type=str)
-
-    @runner_mode.setter
-    def runner_mode(self, v: str) -> None:
-        self._s.setValue("runtime/mode", v)
-
-    @property
-    def exe_path(self) -> str:
-        return self._s.value("runtime/exe_path", "", type=str)
-
-    @exe_path.setter
-    def exe_path(self, v: str) -> None:
-        self._s.setValue("runtime/exe_path", v)

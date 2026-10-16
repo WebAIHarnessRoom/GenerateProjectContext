@@ -26,6 +26,7 @@ from PySide6.QtWidgets import (
     QToolButton,
     QVBoxLayout,
     QWidget,
+    QCheckBox,
 )
 
 from project_context_gui.dialogs.settings_dialog import SettingsDialog
@@ -38,7 +39,15 @@ from project_context_gui.state import RunState, build_cli_args
 from project_context_gui.tabs.config_tab import ConfigTab
 from project_context_gui.tabs.log_tab import LogTab
 from project_context_gui.tabs.run_tab import RunTab
-
+from project_context_gui.services.runner_resolver import (
+    ERR_NO_ENGINE,
+    ERR_NO_EXE,
+    ERR_NO_PYTHON_INTERP,
+    ERR_PY_MODULE_MISSING,
+    ERR_PY_MODULE_PATH_INVALID,
+    ERR_PY_POINTED_TO_PKG,
+    RunnerResolver,
+)
 
 class AppState(Enum):
     EMPTY = "empty"
@@ -530,6 +539,7 @@ class MainWindow(QMainWindow):
         self._settings.runner_mode = dlg.runner_mode()
         self._settings.exe_path = dlg.exe_path()
         self._settings.python_executable = dlg.python_executable()
+        self._settings.python_module_path = dlg.python_module_path()
         self._settings.theme = dlg.theme()
         self._settings.font_size = dlg.font_size()
         self._settings.restore_last_project = dlg.restore_last_project()
@@ -607,19 +617,14 @@ class MainWindow(QMainWindow):
         cli_args = build_cli_args(state)
         cmd = self._resolver.resolve(cli_args)
 
-        # EXE 模式且路径不存在：明确警告，不启动
-        if cmd.is_exe and not Path(cmd.program).is_file():
-            ret = QMessageBox.warning(
-                self, "无法运行",
-                f"未找到 generate-project-context.exe：\n{cmd.program}\n\n"
-                "请在设置中指定路径，或切换到 Python 模式。\n"
-                "是否打开设置？",
-                QMessageBox.Open | QMessageBox.Cancel,
-                QMessageBox.Open,
-            )
-            if ret == QMessageBox.Open:
-                self._on_open_settings()
+        # 致命错误：弹分类对话框
+        if cmd.has_error:
+            self._show_engine_error(cmd, cli_args)
             return
+
+        # 非致命警告
+        if cmd.warning:
+            self._log_tab.append(f"⚠ {cmd.warning}")
 
         self._log_tab.append(f"执行方式：{cmd.mode}")
         self._log_tab.append(f"命令：{cmd.display}")
@@ -630,7 +635,151 @@ class MainWindow(QMainWindow):
         self._progress.setVisible(True)
         self._tabs.setCurrentWidget(self._log_tab)
 
-        self._runner.run(cmd.program, cmd.args, cwd=state.root)
+        self._runner.run(
+            cmd.program, cmd.args,
+            cwd=state.root,
+            extra_env=cmd.env,
+        )
+
+    def _show_engine_error(self, cmd, cli_args) -> None:
+        """根据 error_kind 弹不同对话框。"""
+        kind = cmd.error_kind
+        msg = cmd.error_message
+
+        # EXE 可用性（用于"改用 EXE 模式"按钮）
+        exe_available = self._resolver._find_exe() is not None
+
+        if kind in (ERR_PY_MODULE_MISSING,
+                    ERR_PY_MODULE_PATH_INVALID,
+                    ERR_PY_POINTED_TO_PKG):
+            self._show_python_module_error(kind, msg, exe_available, cli_args)
+            return
+
+        if kind == ERR_NO_PYTHON_INTERP:
+            ret = QMessageBox.warning(
+                self, "无法运行",
+                msg + "\n\n是否打开设置？",
+                QMessageBox.Open | QMessageBox.Cancel,
+                QMessageBox.Open,
+            )
+            if ret == QMessageBox.Open:
+                self._open_settings_focus_module()
+            return
+
+        if kind == ERR_NO_EXE:
+            ret = QMessageBox.warning(
+                self, "无法运行",
+                msg + "\n\n是否打开设置？",
+                QMessageBox.Open | QMessageBox.Cancel,
+                QMessageBox.Open,
+            )
+            if ret == QMessageBox.Open:
+                self._on_open_settings()
+            return
+
+        # 其它：通用
+        QMessageBox.warning(self, "无法运行", msg or "无可用执行引擎。")
+        self._on_open_settings()
+
+    def _show_python_module_error(self, kind: str, msg: str,
+                                   exe_available: bool, cli_args) -> None:
+        """Python 模块相关错误的专用对话框。"""
+        dlg = QMessageBox(self)
+        dlg.setIcon(QMessageBox.Warning)
+        dlg.setWindowTitle("Python 模块不可用")
+        dlg.setText("无法使用 Python 模式")
+
+        if kind == ERR_PY_POINTED_TO_PKG:
+            dlg.setInformativeText(msg)
+        elif kind == ERR_PY_MODULE_PATH_INVALID:
+            dlg.setInformativeText(msg)
+        else:  # ERR_PY_MODULE_MISSING
+            dlg.setInformativeText(msg)
+
+        # 记住选择（仅当 EXE 可用时显示）
+        remember_cb = None
+        if exe_available:
+            remember_cb = QCheckBox("记住此选择（以后自动使用 EXE 模式）")
+            dlg.setCheckBox(remember_cb)
+
+        open_settings_btn = dlg.addButton("打开设置", QMessageBox.ActionRole)
+        if exe_available:
+            switch_btn = dlg.addButton(
+                "改用 EXE 模式", QMessageBox.AcceptRole
+            )
+        else:
+            switch_btn = None
+        dlg.addButton("取消", QMessageBox.RejectRole)
+
+        dlg.exec()
+
+        clicked = dlg.clickedButton()
+        if clicked is open_settings_btn:
+            self._open_settings_focus_module()
+            return
+        if switch_btn is not None and clicked is switch_btn:
+            remember = remember_cb is not None and remember_cb.isChecked()
+            if remember:
+                # 永久切换
+                self._settings.runner_mode = "exe"
+                self._resolver = RunnerResolver(self._settings)
+                self._run_tab.set_resolver(self._resolver)
+                self._update_mode_badge()
+            else:
+                # 仅本次：直接构造 EXE 命令
+                cmd = self._resolver.resolve(cli_args, force_mode="exe")
+                if not cmd.has_error and cmd.program:
+                    self._execute_cmd(cmd, cli_args)
+                    return
+                QMessageBox.warning(
+                    self, "无法运行", "EXE 模式也不可用。"
+                )
+                return
+            # 永久切换后重跑
+            self._start_run()
+
+    def _open_settings_focus_module(self) -> None:
+        from project_context_gui.dialogs.settings_dialog import (
+            SettingsDialog,
+        )
+        dlg = SettingsDialog(
+            self._settings, self, focus_module_path=True,
+        )
+        if dlg.exec() != QDialog.Accepted:
+            return
+        self._settings.default_output_name = dlg.default_output_name()
+        self._settings.runner_mode = dlg.runner_mode()
+        self._settings.exe_path = dlg.exe_path()
+        self._settings.python_executable = dlg.python_executable()
+        self._settings.python_module_path = dlg.python_module_path()
+        self._settings.theme = dlg.theme()
+        self._settings.font_size = dlg.font_size()
+        self._settings.restore_last_project = dlg.restore_last_project()
+
+        self._resolver = RunnerResolver(self._settings)
+        self._run_tab.set_resolver(self._resolver)
+        self._update_mode_badge()
+        self._apply_user_prefs()
+
+    def _execute_cmd(self, cmd, cli_args) -> None:
+        """已知 cmd 无错误时，直接执行。"""
+        if cmd.warning:
+            self._log_tab.append(f"⚠ {cmd.warning}")
+        self._log_tab.append(f"执行方式：{cmd.mode}")
+        self._log_tab.append(f"命令：{cmd.display}")
+
+        state = self._run_tab.collect_state()
+        self._started_at = _now()
+        self._tick_timer.start()
+        self._set_state(AppState.RUNNING)
+        self._progress.setVisible(True)
+        self._tabs.setCurrentWidget(self._log_tab)
+
+        self._runner.run(
+            cmd.program, cmd.args,
+            cwd=state.root,
+            extra_env=cmd.env,
+        )
 
     def _request_cancel(self, confirm: bool = True) -> None:
         if confirm:
