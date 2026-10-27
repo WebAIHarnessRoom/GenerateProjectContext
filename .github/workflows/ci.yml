@@ -1,0 +1,143 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Test (${{ matrix.os }}, Python ${{ matrix.python-version }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            python-version: "3.9"
+          - os: ubuntu-latest
+            python-version: "3.10"
+          - os: ubuntu-latest
+            python-version: "3.11"
+          - os: ubuntu-latest
+            python-version: "3.12"
+          - os: windows-latest
+            python-version: "3.10"
+          - os: windows-latest
+            python-version: "3.12"
+          - os: macos-latest
+            python-version: "3.10"
+          - os: macos-latest
+            python-version: "3.12"
+    env:
+      QT_QPA_PLATFORM: offscreen
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+
+      - name: Install Linux Qt dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libegl1 libgl1 libxkbcommon0 libdbus-1-3 libfontconfig1 \
+            libxcb-cursor0 libxcb-xinerama0 libxcb-icccm4 libxcb-image0 \
+            libxcb-keysyms1 libxcb-randr0 libxcb-render-util0 libxcb-shape0
+
+      - name: Install package
+        # TODO: tomlkit 应加入 pyproject.toml 的 gui extras，届时去掉尾部显式安装
+        run: |
+          python -m pip install -U pip
+          pip install -e ".[dev,gui]" tomlkit
+
+      - name: Run tests
+        if: matrix.os != 'ubuntu-latest' || matrix.python-version != '3.12'
+        run: pytest -ra
+
+      - name: Run tests with coverage
+        if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.12'
+        run: |
+          pytest -ra \
+            --cov=project_context \
+            --cov-report=term-missing \
+            --cov-report=xml
+
+      - name: Upload coverage
+        if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.12'
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-xml
+          path: coverage.xml
+          if-no-files-found: warn
+
+      - name: Run GUI tests
+        if: matrix.python-version == '3.12'
+        run: python scripts/dev/run_gui_tests.py
+
+  build:
+    name: Build distribution
+    needs: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install build tools
+        run: |
+          python -m pip install -U pip
+          pip install build twine
+
+      - name: Build sdist and wheel
+        run: python -m build
+
+      - name: Check metadata
+        run: twine check dist/*
+
+      - name: Upload dist
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+      - name: Verify wheel contains subpackages (informational)
+        # TODO: 修复 pyproject.toml 的 packages 配置后移除 continue-on-error
+        continue-on-error: true
+        run: |
+          python -m venv /tmp/wheel-verify
+          source /tmp/wheel-verify/bin/activate
+          pip install dist/*.whl
+          python -c "import project_context.config"
+          python -c "import project_context.engine.ast"
+          python -c "from project_context.config.loader import builtin_config_dir; assert builtin_config_dir().is_dir()"
+
+      - name: Verify version consistency (informational)
+        # TODO: 统一 pyproject.toml 与 __init__.py 的版本号后移除 continue-on-error
+        continue-on-error: true
+        run: |
+          PKG_VERSION=$(python -c "import tomllib; print(tomllib.load(open('pyproject.toml','rb'))['project']['version'])")
+          MOD_VERSION=$(python -c "import project_context; print(project_context.__version__)")
+          echo "pyproject.toml : $PKG_VERSION"
+          echo "__init__.py    : $MOD_VERSION"
+          test "$PKG_VERSION" = "$MOD_VERSION"

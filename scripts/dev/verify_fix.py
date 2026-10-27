@@ -3,6 +3,19 @@ import sys
 from pathlib import Path
 
 # 1. 内置配置目录
+import sys
+from pathlib import Path
+
+def _find_project_root() -> Path:
+    here = Path(__file__).resolve()
+    for parent in here.parents:
+        if (parent / "pyproject.toml").is_file():
+            return parent
+    raise RuntimeError("未找到项目根")
+
+PROJECT_ROOT = _find_project_root()
+sys.path.insert(0, str(PROJECT_ROOT))
+
 from project_context.config.loader import builtin_config_dir, find_language_files
 d = builtin_config_dir()
 assert d.is_dir(), f"configs 目录不存在: {d}"

@@ -1,0 +1,99 @@
+name: Bug Report
+description: 报告一个可复现的 bug
+title: "[Bug] "
+labels: ["bug", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        感谢反馈！提交前请先搜索已有 issue，并确认使用的是最新版本。
+
+        使用问题请先看 [FAQ](https://github.com/WebAIHarnessRoom/GenerateProjectContext/blob/master/docs/faq.md)。
+
+  - type: checkboxes
+    id: preflight
+    attributes:
+      label: 提交前确认
+      options:
+        - label: 我已搜索现有 issue，未找到相同问题
+          required: true
+        - label: 我已阅读 FAQ 与相关文档
+          required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: 版本
+      description: 运行 `project-context --help` 或 `pip show project-context` 获取
+      placeholder: "0.1.0"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: component
+    attributes:
+      label: 组件
+      options:
+        - CLI (project-context)
+        - GUI (project-context-gui)
+        - exe (generate-project-context.exe)
+        - Python API (generate_context)
+        - 配置系统
+        - 文档
+    validations:
+      required: true
+
+  - type: input
+    id: os
+    attributes:
+      label: 操作系统
+      placeholder: "Windows 11 / Ubuntu 22.04 / macOS 14"
+    validations:
+      required: true
+
+  - type: input
+    id: python
+    attributes:
+      label: Python 版本
+      placeholder: "3.11"
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: 实际行为
+      description: 发生了什么
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: 期望行为
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: 复现步骤
+      description: 最小可复现步骤；若涉及项目文件，可构造一个最小示例仓库
+      placeholder: |
+        1. 运行 `project-context .`
+        2. 看到 ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: 日志 / 输出
+      description: 建议运行 `project-context . --dump-config` 并附上输出
+      render: shell
+
+  - type: textarea
+    id: context
+    attributes:
+      label: 其他信息
+      description: 截图、相关配置、尝试过的方案

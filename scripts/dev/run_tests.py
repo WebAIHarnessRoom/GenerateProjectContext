@@ -18,7 +18,14 @@ import sys
 from pathlib import Path
 
 
-REPO_ROOT = Path(__file__).resolve().parent
+def _find_project_root() -> Path:
+    here = Path(__file__).resolve()
+    for parent in here.parents:
+        if (parent / "pyproject.toml").is_file():
+            return parent
+    raise RuntimeError("未找到项目根")
+
+REPO_ROOT = _find_project_root()
 TESTS_DIR = REPO_ROOT / "tests"
 
 

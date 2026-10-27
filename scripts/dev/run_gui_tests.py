@@ -21,8 +21,15 @@ from pathlib import Path
 # ---------------------------------------------------------------------------
 # 保证能 import project_context_gui
 # ---------------------------------------------------------------------------
-HERE = Path(__file__).resolve().parent
-sys.path.insert(0, str(HERE))
+def _find_project_root() -> Path:
+    here = Path(__file__).resolve()
+    for parent in here.parents:
+        if (parent / "pyproject.toml").is_file():
+            return parent
+    raise RuntimeError("未找到项目根（缺少 pyproject.toml）")
+
+PROJECT_ROOT = _find_project_root()
+sys.path.insert(0, str(PROJECT_ROOT))
 
 # Qt 无头模式（必须在导入 PySide6 之前设置）
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")

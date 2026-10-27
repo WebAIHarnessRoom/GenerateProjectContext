@@ -1,11 +1,60 @@
-/out
-/doc
-/tmp
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.tox/
+.nox/
+.eggs/
+*.egg-info/
+build/
+dist/
+.venv/
+venv/
+env/
+ENV/
 
-/v1.0.0/out
+# 覆盖率
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
 
-/build
+# IDE
+.idea/
+.vscode/
+.vs/
+.settings/
+.fleet/
+.history/
 
-__pycache__
+# 项目生成物
+PROJECT_CONTEXT.md
+out/
+tmp/
+doc/
+.project_context/
 
+# 日志/临时
 *.log
+*.tmp
+*.bak
+*.orig
+*.swp
+*.swo
+*.rej
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# 打包/二进制
+*.spec
+*.exe
+*.dll
+*.so
+*.dylib
+*.psd

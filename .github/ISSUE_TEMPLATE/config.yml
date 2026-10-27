@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 使用问题与讨论
+    url: https://github.com/WebAIHarnessRoom/GenerateProjectContext/discussions
+    about: 使用问题、想法、展示请到 Discussions
+  - name: 安全漏洞
+    url: https://github.com/WebAIHarnessRoom/GenerateProjectContext/security/policy
+    about: 请勿公开提交安全漏洞，按 SECURITY.md 报告
