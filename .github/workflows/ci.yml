@@ -88,6 +88,10 @@ jobs:
       - name: Run GUI tests
         if: matrix.python-version == '3.12'
         run: python scripts/dev/run_gui_tests.py
+        env:
+          QT_QPA_PLATFORM: offscreen
+          PYTHONIOENCODING: utf-8      # ← 新增
+          PYTHONUTF8: "1"              # ← 新增（Python 3.7+ 全局 UTF-8 模式）
 
   build:
     name: Build distribution

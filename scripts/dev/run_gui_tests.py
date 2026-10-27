@@ -19,6 +19,20 @@ import traceback
 from pathlib import Path
 
 # ---------------------------------------------------------------------------
+# 强制 stdout/stderr 使用 UTF-8：
+# GitHub Actions 的 Windows runner 默认 locale 是 en-US，Python 3.12 会把
+# stdout 编成 cp1252，遇到中文/emoji 就抛 UnicodeEncodeError。这里在任何
+# 其它输出之前把它改成 UTF-8，把"环境问题"收敛在脚本自身，不依赖 CI 配置。
+# ---------------------------------------------------------------------------
+for _stream in (sys.stdout, sys.stderr):
+    if hasattr(_stream, "reconfigure"):
+        try:
+            _stream.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            pass
+
+
+# ---------------------------------------------------------------------------
 # 保证能 import project_context_gui
 # ---------------------------------------------------------------------------
 def _find_project_root() -> Path:
