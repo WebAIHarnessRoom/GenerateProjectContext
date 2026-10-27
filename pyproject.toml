@@ -34,9 +34,11 @@ dev = [
 project-context = "project_context.cli:main"
 project-context-gui = "project_context_gui.app:main"
 
+[tool.setuptools]
+include-package-data = true
+
 [tool.setuptools.packages.find]
 include = ["project_context*", "project_context_gui*"]
-include-package-data = true
 
 [tool.setuptools.package-data]
 "project_context" = ["configs/*.toml", "configs/languages/*.toml"]
