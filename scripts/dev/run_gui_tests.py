@@ -2450,18 +2450,26 @@ if has_qt():
     def _():
         _ensure_qt_app()
         from project_context_gui.tabs.run_tab import RunTab
-        from PySide6.QtWidgets import QPushButton
+        from PySide6.QtWidgets import QAbstractButton   # 改为基类
+
         tab = RunTab()
         try:
-            btns = tab.findChildren(QPushButton)
-            texts = [b.text() for b in btns]
-            A.true(any("配置加载说明" in t for t in texts))
-            A.true(any("预览最终生效规则" in t for t in texts))
+            btns = tab.findChildren(QAbstractButton)
+            # 说明文字可能落在 text 或 toolTip 上（QToolButton 用的是 toolTip）
+            A.true(
+                any("配置加载说明" in (b.text() + "|" + b.toolTip())
+                    for b in btns),
+                f"未找到配置加载说明按钮；现有按钮: "
+                f"{[(b.text(), b.toolTip()) for b in btns]}",
+            )
+            A.true(
+                any("预览最终生效规则" in b.text() for b in btns),
+                "未找到预览最终生效规则按钮",
+            )
         finally:
             tab.deleteLater()
 else:
-    skip("I-CFG-07 RunTab 有“查看配置加载说明”按钮",
-         "PySide6 未安装")
+    skip("I-CFG-07 RunTab 有“查看配置加载说明”按钮", "PySide6 未安装")
 
 if has_qt():
     @test("I-CFG-08 LayerInfo 有 edit_hint / edit_target")
